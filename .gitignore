@@ -12,3 +12,6 @@ npm-debug.log*
 pnpm-lock.yaml
 package-lock.json
 yarn.lock
+
+# Local Solana harness artifacts (may contain keypairs/state)
+program/.missionmesh-local/
