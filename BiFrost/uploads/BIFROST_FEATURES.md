@@ -1,12 +1,12 @@
-# MissionMesh Feature Inventory
+# Bifrost Feature Inventory
 
-This document describes the current feature set implemented in the MissionMesh repository as of April 24, 2026. It covers the web app, API, shared domain model, Solana integration layer, native Rust program, local harnesses, and tests.
+This document describes the current feature set implemented in the Bifrost repository as of April 24, 2026. It covers the web app, API, shared domain model, Solana integration layer, native Rust program, local harnesses, and tests.
 
 The goal of this file is completeness and accuracy. Wherever a surface is present but not fully wired, that is called out explicitly.
 
 ## Product Summary
 
-MissionMesh is a Solana-oriented mission execution system for governed multi-agent workflows.
+Bifrost is a Solana-oriented mission execution system for governed multi-agent workflows.
 
 At a high level, the repo currently provides:
 
@@ -31,6 +31,7 @@ At a high level, the repo currently provides:
 - `Demo-backed`: visible and functional in the UI, but backed by demo data or mock execution.
 - `Scaffolded`: present as code structure or instruction set, but not yet the primary runtime path.
 - `UI-only`: visible control with no backend behavior connected yet.
+- `Planned`: product and protocol surface is specified here, but implementation work is still pending.
 
 ## Frontend Features
 
@@ -40,7 +41,7 @@ Status: `Implemented`
 
 - Shared root layout wraps the entire app in a Solana wallet provider.
 - Persistent left-hand sidebar navigation for all major sections.
-- Global MissionMesh branding and Solana Frontier positioning.
+- Global Bifrost branding and Solana Frontier positioning.
 - Shared top bar component used across pages.
 - Global CSS theme with a custom dashboard-style visual system.
 - Wallet status card pinned in the sidebar footer.
@@ -77,7 +78,7 @@ Status: `Implemented`
 
 Status: `Demo-backed`
 
-- Hero section positioning MissionMesh as an autonomous agent mission OS.
+- Hero section positioning Bifrost as an autonomous agent mission OS.
 - Quick action button to launch a new mission.
 - Static network badge showing `Devnet`.
 - KPI cards for:
@@ -154,7 +155,7 @@ Status: `Implemented`
 Status: `Implemented`
 
 - Browser derives the authority wallet from the connected public key.
-- Browser builds a canonical MissionMesh authorization message before mission creation.
+- Browser builds a canonical Bifrost authorization message before mission creation.
 - Browser requests a `signMessage` signature from the connected wallet.
 - Browser base64-encodes the detached signature.
 - Browser submits signed mission creation payload to the API.
@@ -708,7 +709,7 @@ Status: `Scaffolded`
 
 ## Solana Integration Layer
 
-### MissionMeshSolanaClient
+### BifrostSolanaClient
 
 Status: `Implemented` with `Mocked remote mode`
 
@@ -720,7 +721,7 @@ Status: `Implemented` with `Mocked remote mode`
 - returns synthetic mission, verification, settlement, and receipt identifiers
 - does not execute real on-chain value movement for the API mission flow
 - In local mode:
-- shells out to the Rust example harness `missionmesh_local`
+- shells out to the Rust example harness `bifrost_local`
 - supports command verbs:
 - `create-mission`
 - `prepare-mission`
@@ -886,7 +887,7 @@ Status: `Implemented`
 
 ## Local Program Harness and Examples
 
-### `missionmesh_local` Example
+### `bifrost_local` Example
 
 Status: `Implemented`
 
@@ -935,7 +936,7 @@ Status: `Implemented`
 
 Status: `Implemented`
 
-- Program test suite exists in `program/tests/missionmesh.rs`.
+- Program test suite exists in `program/tests/bifrost.rs`.
 - Covers protocol initialization and updates.
 - Covers mission creation and lifecycle checks.
 - Covers allocation and provider policy behavior.
@@ -971,6 +972,188 @@ Status: `Implemented`
 - mission record
 - analytics overview
 
+## Planned Agent Registry and Evaluation Protocol
+
+Status: `Planned`
+
+This section captures the intended end-state for self-serve agent registration and capability certification. It is not implemented yet in the API or frontend. The current app still uses demo registry data, while the native Solana program already contains lower-level agent registry primitives that can anchor future metadata hashes.
+
+### Registry Design Goal
+
+Status: `Planned`
+
+- Treat the registry as a claim verification system, not just a directory of agents.
+- Allow any agent type to register, not only the current demo news, market, skeptic, execution, and verifier agents.
+- Model the registry around certified capabilities rather than fixed roles.
+- Store rich agent metadata, test evidence, phase history, and evaluation reports off-chain.
+- Store compact identity, payout, verifier, capability, metadata, and privacy policy hashes on-chain.
+- Separate unverified agent claims from verified registry claims shown to users.
+
+### Agent Manifest
+
+Status: `Planned`
+
+- Introduce a signed `AgentManifest` submitted by the agent owner.
+- Manifest fields should include:
+- agent ID
+- owner wallet
+- payout wallet
+- verifier wallet or verifier policy
+- endpoint URL
+- execution mode
+- declared role or custom role
+- declared capabilities
+- input schema
+- output schema
+- phase schema
+- allowed tools and external services
+- spend policy
+- price model
+- metadata URI
+- privacy policy URI
+- requested evaluation suites
+- timestamp and owner signature
+- Hash the manifest and related policy documents for on-chain anchoring.
+
+### Agent Runtime Protocol
+
+Status: `Planned`
+
+- Require registered callback agents to expose a small Bifrost-compatible HTTP interface.
+- Intended endpoints:
+- `GET /.well-known/bifrost-agent.json`
+- `POST /quote`
+- `POST /run`
+- `GET /runs/:id`
+- `POST /cancel`
+- `GET /receipts/:id`
+- Require signed Bifrost requests and signed agent responses.
+- Require deterministic run IDs, explicit phase updates, structured artifacts, and spend receipts.
+- Require callback agents to respect mission budget, allowlist, timeout, cancellation, and human approval constraints.
+
+### Registration Lifecycle
+
+Status: `Planned`
+
+- `submitted`: manifest is received and signature is valid.
+- `protocol_check`: endpoint shape, authentication, quote, run, cancel, and receipt behavior are tested.
+- `sandbox_eval`: agent runs against simulated missions with no user funds at risk.
+- `certified`: agent passes minimum evaluation threshold for one or more declared capabilities.
+- `active`: agent can be selected for live missions.
+- `probation`: agent has drifted, failed recent live missions, or is under review.
+- `suspended`: agent is blocked due to failed evaluations, invalid receipts, policy violations, or malicious behavior.
+
+### Capability-Centric Certification
+
+Status: `Planned`
+
+- Allow one agent to hold many independently certified capabilities.
+- Certify each capability against its own input schema, output schema, tool permissions, and evaluation suite.
+- Track certification per capability rather than giving the whole agent a single blanket approval.
+- Intended capability state fields:
+- capability ID
+- capability version
+- input schema hash
+- output schema hash
+- evaluation suite ID
+- latest score
+- certification status
+- latest report hash
+- expiry or re-evaluation time
+- Support generic capabilities such as code editing, research, design review, data analysis, legal drafting, lead generation, monitoring, trading analysis, verification, and custom user-defined skills.
+
+### Deterministic Evaluation
+
+Status: `Planned`
+
+- Add hard tests that do not depend on AI judgment.
+- Protocol tests should verify endpoint reachability, schema validity, signed messages, deterministic run IDs, cancellation, timeouts, and receipt shape.
+- Budget tests should verify per-call caps, mission caps, allowlists, approval gates, and quote-to-receipt consistency.
+- Security tests should verify prompt injection resistance, replay protection, forged receipt rejection, malicious tool response handling, overbilling prevention, and data exfiltration boundaries.
+- Capability tests should use task-specific fixtures and hidden cases for the capability being certified.
+- Any hard security, signing, receipt, or budget failure should override aggregate scoring and fail the certification.
+
+### AI Evaluation
+
+Status: `Planned`
+
+- Add AI-assisted evaluation for fuzzy quality checks that deterministic tests cannot fully judge.
+- AI judges should evaluate usefulness, factual support, reasoning quality, hallucinated evidence, source faithfulness, task adherence, and whether the output satisfies mission success criteria.
+- Use multiple evaluator profiles when possible, such as strict correctness judge, adversarial skeptic judge, and domain judge.
+- Require AI evaluators to produce structured verdicts with scores, confidence, cited evidence references, accepted claims, rejected claims, and review notes.
+- Route low-confidence or high-stakes AI judgments to human review before certification.
+- Never allow AI evaluation alone to override hard protocol, budget, receipt, or security failures.
+
+### Evaluation Reports
+
+Status: `Planned`
+
+- Persist every evaluation run as a structured `EvaluationReport`.
+- Reports should include:
+- agent ID
+- manifest hash
+- suite ID
+- run ID
+- started and completed timestamps
+- per-phase results
+- deterministic test results
+- AI evaluation results
+- artifacts and log hashes
+- claims verified
+- claims rejected
+- overall score
+- pass or fail verdict
+- evaluator identity
+- report signature
+- Surface evaluation reports in the registry so users can inspect what was actually proven.
+
+### Registry UI Additions
+
+Status: `Planned`
+
+- Replace the current UI-only `Register agent` action with a real registration flow.
+- Add a registration form for manifest fields, endpoint URL, wallets, capability claims, schemas, phases, tools, services, and price model.
+- Add an evaluation progress view with lifecycle phases and pass or fail results.
+- Show capability-level certification badges on registry cards.
+- Show rejected claims separately from verified claims.
+- Add per-agent pages for evaluation history, live mission history, disputes, receipts, and re-evaluation status.
+- Add user-facing warnings for uncertified, expired, probation, or suspended agents.
+
+### API Additions
+
+Status: `Planned`
+
+- Add registry application endpoints:
+- `POST /api/registry/applications`
+- `GET /api/registry/applications/:applicationId`
+- `POST /api/registry/applications/:applicationId/protocol-check`
+- `POST /api/registry/applications/:applicationId/evaluations`
+- `GET /api/registry/agents/:agentId/evaluations`
+- `GET /api/registry/capabilities`
+- Add persistence for applications, manifests, capability claims, evaluation suites, evaluation reports, and certification state.
+- Add a mocked evaluation runner first for hackathon demo purposes.
+- Replace the mocked runner with real sandbox workers after the demo path is stable.
+
+### Solana Integration Additions
+
+Status: `Planned`
+
+- Wire API registration to the existing native `register_agent` and `update_agent` instructions.
+- Use on-chain agent registry accounts as the canonical anchor for identity, payout wallet, verifier, and metadata hashes.
+- Keep rich metadata and evaluation reports off-chain, with hashes committed on-chain.
+- Add indexer or API lookup support so registry pages can resolve on-chain agent accounts into full off-chain profiles.
+- Add future dispute and slashing hooks for agents that falsify claims, forge receipts, or violate budget constraints.
+
+### Test Plan
+
+Status: `Planned`
+
+- Add shared type tests for manifest, capability, evaluation report, and certification state schemas.
+- Add API tests for application creation, duplicate handling, signature validation, mocked protocol checks, mocked eval pass, mocked eval fail, and status transitions.
+- Add evaluator tests for deterministic failure overrides and AI low-confidence routing.
+- Add frontend tests for registration form validation, evaluation progress rendering, and certified capability display.
+- Add program or harness tests for registering and updating agents with manifest, capability, metadata, and privacy hashes.
+
 ## Important Current Limitations
 
 These are real constraints in the current codebase and should be understood as part of the feature inventory.
@@ -980,6 +1163,7 @@ These are real constraints in the current codebase and should be understood as p
 - The main live mission flow is tailored around a specific Trump and Polymarket demo scenario.
 - Many dashboard, history, registry, profile, and analytics views are driven by shared demo data rather than live backend queries.
 - Pause, stop, register agent, assign to mission, export CSV, and some filter controls are currently UI-only.
+- Self-serve agent registration, capability certification, protocol checks, sandbox evaluation, AI evaluation, and evaluation report browsing are planned but not yet implemented.
 - The LangGraph workflow exists but is not the primary mission runtime used by the main API path.
 - The native Solana program is substantial and tested, but the README correctly describes the overall system as not yet wired to a fully real end-to-end devnet escrow lifecycle in the API flow.
 
@@ -1001,6 +1185,7 @@ These are real constraints in the current codebase and should be understood as p
 - Most non-local Solana execution in the API mission flow.
 - Most dashboard and analytics metrics.
 - Registry search and filtering behavior.
+- Agent registration and capability evaluation flows.
 - Some surface-level page actions and controls.
 - LLM responses when no real model provider is configured.
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { buildMissionAuthorizationMessage, demoMissionInput, demoRegistry } from "@missionmesh/shared";
+import { buildMissionAuthorizationMessage, demoMissionInput, demoRegistry } from "@bifrost/shared";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";

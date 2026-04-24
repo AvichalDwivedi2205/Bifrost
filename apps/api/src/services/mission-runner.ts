@@ -8,7 +8,7 @@ import type {
   MissionResult,
   MissionTask,
   SpendApprovalRequest,
-} from "@missionmesh/shared";
+} from "@bifrost/shared";
 import { nanoid } from "nanoid";
 
 import { ExecutionAgent, type ExecutionOutput } from "../agents/execution-agent";
@@ -19,7 +19,7 @@ import { VerifierAgent } from "../agents/verifier-agent";
 import { LLMRouter } from "../providers/llm/router";
 import { AgentRegistryService } from "./registry";
 import { PolicyEngine } from "./policy-engine";
-import { MissionMeshSolanaClient } from "./solana/missionmesh-client";
+import { BifrostSolanaClient } from "./solana/bifrost-client";
 import { MissionStore } from "./store";
 
 const DEFAULT_SELECTION_AGENT_IDS = [
@@ -90,7 +90,7 @@ export class MissionRunner {
   private readonly artifacts = new Map<string, MissionArtifacts>();
   private readonly llm = new LLMRouter();
   private readonly policy = new PolicyEngine();
-  private readonly solana = new MissionMeshSolanaClient();
+  private readonly solana = new BifrostSolanaClient();
   private readonly registry: AgentRegistryService;
   private readonly news = new NewsAgent(this.llm);
   private readonly market = new MarketAgent(this.llm);
@@ -167,7 +167,7 @@ export class MissionRunner {
       id: `evt_${nanoid(10)}`,
       missionId: record.id,
       type: "SELECTION_PROPOSED",
-      label: "MissionMesh proposed a curated agent team for the task",
+      label: "Bifrost proposed a curated agent team for the task",
       proposalId: selectionProposal.id,
       agentIds: selectionProposal.recommendedAgentIds,
       createdAt: new Date().toISOString(),
@@ -373,7 +373,7 @@ export class MissionRunner {
       id: `evt_${nanoid(10)}`,
       missionId,
       type: "SPEND_APPROVED",
-      label: "Human approved a payment and MissionMesh executed it",
+      label: "Human approved a payment and Bifrost executed it",
       agentId: approval.agentId,
       amount: approval.amount,
       service: approval.service,
@@ -525,7 +525,7 @@ export class MissionRunner {
         id: "task-plan",
         title: "Review the proposed agent team",
         objective:
-          "MissionMesh proposes a curated lineup and waits for a human to approve or change it.",
+          "Bifrost proposes a curated lineup and waits for a human to approve or change it.",
         assignedAgent: "coordinator",
         dependencies: [],
         budgetAllocation: 0,
@@ -1098,7 +1098,7 @@ export class MissionRunner {
       id: `evt_${nanoid(10)}`,
       missionId,
       type: "SETTLEMENT_RELEASED",
-      label: "MissionMesh released settlement and refunded the unused budget",
+      label: "Bifrost released settlement and refunded the unused budget",
       amount: settledRecord.budget.spent,
       txSignature: settlementTx.txSignature,
       createdAt: new Date().toISOString(),

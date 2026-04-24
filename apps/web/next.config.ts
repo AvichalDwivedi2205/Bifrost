@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const appDir = dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@missionmesh/shared"],
+  transpilePackages: ["@bifrost/shared"],
   turbopack: {
     root: resolve(appDir, "../.."),
   },

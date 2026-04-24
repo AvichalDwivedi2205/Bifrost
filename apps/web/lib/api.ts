@@ -1,4 +1,5 @@
 import type {
+  AgentManifest,
   MissionAuthEnvelope,
   MissionCreateRequest,
   MissionInput,
@@ -6,8 +7,10 @@ import type {
   MissionSelectionApprovalRequest,
   MissionSpendApprovalDecisionRequest,
   RegistryAgent,
-} from "@missionmesh/shared";
-import { demoMissionRecord, demoRegistry } from "@missionmesh/shared";
+  RegistryApplication,
+  RegistryApplicationCreateRequest,
+} from "@bifrost/shared";
+import { demoMissionRecord, demoRegistry } from "@bifrost/shared";
 
 function inferLocalApiBaseUrl(): string {
   if (typeof window === "undefined") {
@@ -100,6 +103,94 @@ export async function fetchRegistry(): Promise<RegistryAgent[]> {
   return json.agents;
 }
 
+export async function fetchRegistryApplications(): Promise<RegistryApplication[]> {
+  const baseUrl = resolveApiBaseUrl();
+  if (!baseUrl) {
+    return [];
+  }
+
+  const response = await fetch(`${baseUrl}/api/registry/applications`, {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error("Failed to fetch registry applications");
+  }
+
+  const json = (await response.json()) as { applications: RegistryApplication[] };
+  return json.applications;
+}
+
+export async function createRegistryApplication(
+  manifest: AgentManifest,
+  auth: MissionAuthEnvelope,
+): Promise<RegistryApplication> {
+  const baseUrl = resolveApiBaseUrl();
+  if (!baseUrl) {
+    return createDemoRegistryApplication(manifest);
+  }
+
+  const payload: RegistryApplicationCreateRequest = {
+    manifest,
+    auth,
+  };
+
+  const response = await fetch(`${baseUrl}/api/registry/applications`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || "Failed to create registry application");
+  }
+
+  const json = (await response.json()) as { application: RegistryApplication };
+  return json.application;
+}
+
+export async function runRegistryProtocolCheck(
+  applicationId: string,
+): Promise<RegistryApplication> {
+  const baseUrl = resolveApiBaseUrl();
+  if (!baseUrl) {
+    throw new Error("Registry protocol checks require an API server");
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/registry/applications/${applicationId}/protocol-check`,
+    { method: "POST" },
+  );
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || "Failed to run protocol check");
+  }
+
+  const json = (await response.json()) as { application: RegistryApplication };
+  return json.application;
+}
+
+export async function runRegistryEvaluation(applicationId: string): Promise<{
+  application: RegistryApplication;
+}> {
+  const baseUrl = resolveApiBaseUrl();
+  if (!baseUrl) {
+    throw new Error("Registry evaluations require an API server");
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/registry/applications/${applicationId}/evaluations`,
+    { method: "POST" },
+  );
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || "Failed to run registry evaluation");
+  }
+
+  return (await response.json()) as { application: RegistryApplication };
+}
+
 export async function approveMissionSelection(
   missionId: string,
   chosenAgentIds?: string[],
@@ -175,5 +266,22 @@ export function subscribeToMission(
 
   return () => {
     socket.close();
+  };
+}
+
+function createDemoRegistryApplication(manifest: AgentManifest): RegistryApplication {
+  const now = new Date().toISOString();
+  return {
+    id: "demo-registry-application",
+    status: "submitted",
+    submittedAt: now,
+    updatedAt: now,
+    ownerWallet: manifest.ownerWallet,
+    manifest,
+    manifestHash: "demo_manifest_hash",
+    protocolChecks: [],
+    evaluationReports: [],
+    certifiedCapabilities: [],
+    rejectedClaims: [],
   };
 }

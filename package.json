@@ -1,5 +1,5 @@
 {
-  "name": "missionmesh",
+  "name": "bifrost",
   "private": true,
   "packageManager": "bun@1.3.9",
   "workspaces": [

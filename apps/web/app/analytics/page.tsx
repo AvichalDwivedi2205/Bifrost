@@ -1,4 +1,4 @@
-import { demoAnalytics } from "@missionmesh/shared";
+import { demoAnalytics } from "@bifrost/shared";
 
 import { TopBar } from "@/components/topbar";
 

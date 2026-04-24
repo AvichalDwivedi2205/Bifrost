@@ -1,4 +1,4 @@
-import type { MissionInput } from "./types";
+import type { AgentManifest, MissionInput } from "./types";
 
 export interface MissionAuthEnvelope {
   issuedAt: string;
@@ -20,6 +20,11 @@ export interface MissionSpendApprovalDecisionRequest {
   auth: MissionAuthEnvelope;
 }
 
+export interface RegistryApplicationCreateRequest {
+  manifest: AgentManifest;
+  auth: MissionAuthEnvelope;
+}
+
 export const MISSION_AUTH_WINDOW_MS = 5 * 60 * 1000;
 
 export function buildMissionAuthorizationMessage(
@@ -27,7 +32,7 @@ export function buildMissionAuthorizationMessage(
   issuedAt: string,
 ): string {
   return [
-    "MissionMesh Authorization",
+    "Bifrost Authorization",
     "Action: create_mission",
     `Authority: ${mission.authorityWallet}`,
     `Issued At: ${issuedAt}`,
@@ -53,7 +58,7 @@ export function buildSelectionAuthorizationMessage(
   issuedAt: string,
 ): string {
   return [
-    "MissionMesh Authorization",
+    "Bifrost Authorization",
     "Action: approve_agent_selection",
     `Mission: ${missionId}`,
     `Authority: ${authorityWallet}`,
@@ -70,12 +75,37 @@ export function buildSpendApprovalAuthorizationMessage(
   issuedAt: string,
 ): string {
   return [
-    "MissionMesh Authorization",
+    "Bifrost Authorization",
     "Action: resolve_spend_approval",
     `Mission: ${missionId}`,
     `Authority: ${authorityWallet}`,
     `Approval: ${approvalId}`,
     `Decision: ${approve ? "approve" : "reject"}`,
     `Issued At: ${issuedAt}`,
+  ].join("\n");
+}
+
+export function buildRegistryApplicationAuthorizationMessage(
+  manifest: AgentManifest,
+  issuedAt: string,
+): string {
+  return [
+    "Bifrost Authorization",
+    "Action: register_agent_application",
+    `Owner: ${manifest.ownerWallet}`,
+    `Agent: ${manifest.agentId}`,
+    `Slug: ${manifest.slug}`,
+    `Name: ${manifest.name}`,
+    `Role: ${manifest.role}`,
+    `Endpoint: ${manifest.endpointUrl}`,
+    `Payout Wallet: ${manifest.payoutWallet}`,
+    `Verifier Wallet: ${manifest.verifierWallet}`,
+    `Issued At: ${issuedAt}`,
+    `Signed At: ${manifest.signedAt}`,
+    `Capabilities: ${manifest.capabilities
+      .map((capability) => `${capability.id}@${capability.version}`)
+      .sort()
+      .join(",")}`,
+    `Evaluation Suites: ${[...manifest.requestedEvaluationSuites].sort().join(",")}`,
   ].join("\n");
 }

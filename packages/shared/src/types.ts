@@ -30,7 +30,8 @@ export type AgentRole =
   | "risk"
   | "execution"
   | "verifier"
-  | "compliance";
+  | "compliance"
+  | "custom";
 
 export type TaskStatus =
   | "pending"
@@ -43,6 +44,26 @@ export type TaskStatus =
 export type ApprovalStatus = "pending" | "approved" | "rejected";
 
 export type AgentPhaseStatus = "pending" | "active" | "complete" | "failed";
+
+export type RegistryApplicationStatus =
+  | "submitted"
+  | "protocol_check"
+  | "sandbox_eval"
+  | "certified"
+  | "active"
+  | "probation"
+  | "suspended"
+  | "rejected";
+
+export type CapabilityCertificationStatus =
+  | "uncertified"
+  | "sandbox_passed"
+  | "live_certified"
+  | "needs_review"
+  | "suspended"
+  | "rejected";
+
+export type EvaluationCheckStatus = "pending" | "running" | "passed" | "failed";
 
 export interface BudgetPolicy {
   totalBudget: number;
@@ -109,6 +130,127 @@ export interface AgentPhaseRun {
   completedAt?: string;
 }
 
+export interface AgentCapabilityClaim {
+  id: string;
+  label: string;
+  description: string;
+  version: string;
+  inputSchema: string;
+  outputSchema: string;
+  requiredTools: string[];
+  allowedServices: string[];
+  evaluationSuiteId: string;
+}
+
+export interface AgentManifest {
+  agentId: string;
+  slug: string;
+  name: string;
+  description: string;
+  icon: string;
+  ownerWallet: string;
+  payoutWallet: string;
+  verifierWallet: string;
+  endpointUrl: string;
+  role: AgentRole;
+  executionMode: "builtin" | "callback";
+  capabilities: AgentCapabilityClaim[];
+  phaseSchema: AgentPhaseDefinition[];
+  supportedServices: string[];
+  spendPolicy: {
+    maxPerCall: number;
+    budgetCap: number;
+    requiresHumanAbove: number;
+  };
+  priceModel: string;
+  metadataUri?: string;
+  privacyPolicyUri?: string;
+  requestedEvaluationSuites: string[];
+  signedAt: string;
+}
+
+export interface CertifiedCapability {
+  capabilityId: string;
+  label: string;
+  version: string;
+  inputSchemaHash: string;
+  outputSchemaHash: string;
+  evaluationSuiteId: string;
+  latestScore: number;
+  status: CapabilityCertificationStatus;
+  latestReportId?: string;
+  latestReportHash?: string;
+  expiresAt?: string;
+}
+
+export interface EvaluationPhaseResult {
+  phaseId: string;
+  label: string;
+  status: EvaluationCheckStatus;
+  score: number;
+  detail: string;
+  evidenceRef?: string;
+}
+
+export interface DeterministicEvalResult {
+  id: string;
+  label: string;
+  status: EvaluationCheckStatus;
+  score: number;
+  hardFail: boolean;
+  detail: string;
+}
+
+export interface AiEvalResult {
+  judgeId: string;
+  label: string;
+  verdict: "pass" | "fail" | "needs_review";
+  score: number;
+  confidence: number;
+  summary: string;
+  acceptedClaims: string[];
+  rejectedClaims: string[];
+  evidenceRefs: string[];
+}
+
+export interface EvaluationReport {
+  id: string;
+  agentId: string;
+  applicationId: string;
+  manifestHash: string;
+  suiteId: string;
+  runId: string;
+  status: "running" | "passed" | "failed" | "needs_review";
+  startedAt: string;
+  completedAt?: string;
+  phaseResults: EvaluationPhaseResult[];
+  deterministicResults: DeterministicEvalResult[];
+  aiResults: AiEvalResult[];
+  claimsVerified: string[];
+  claimsRejected: string[];
+  overallScore: number;
+  evaluatorWallet: string;
+  reportHash: string;
+  signature: string;
+  anchorTxSignature?: string;
+}
+
+export interface RegistryApplication {
+  id: string;
+  status: RegistryApplicationStatus;
+  submittedAt: string;
+  updatedAt: string;
+  ownerWallet: string;
+  manifest: AgentManifest;
+  manifestHash: string;
+  protocolChecks: DeterministicEvalResult[];
+  evaluationReports: EvaluationReport[];
+  certifiedCapabilities: CertifiedCapability[];
+  rejectedClaims: string[];
+  anchorTxSignature?: string;
+  agentRegistryPda?: string;
+}
+
 export interface RegistryAgent {
   id: string;
   slug: string;
@@ -130,6 +272,17 @@ export interface RegistryAgent {
   metadataUri?: string;
   priceModel?: string;
   phaseSchema: AgentPhaseDefinition[];
+  registrationStatus?: RegistryApplicationStatus;
+  certifiedCapabilities?: CertifiedCapability[];
+  evaluationSummary?: {
+    latestReportId: string;
+    latestScore: number;
+    deterministicPassed: number;
+    aiJudges: number;
+    claimsVerified: string[];
+    claimsRejected: string[];
+    updatedAt: string;
+  };
 }
 
 export interface AgentProfile extends RegistryAgent {

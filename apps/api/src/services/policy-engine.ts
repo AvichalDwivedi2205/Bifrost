@@ -1,4 +1,4 @@
-import type { AgentProfile, MissionRecord } from "@missionmesh/shared";
+import type { AgentProfile, MissionRecord } from "@bifrost/shared";
 
 export interface SpendAuthorization {
   approved: boolean;

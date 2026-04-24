@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { AgentProfile, MissionTask } from "@missionmesh/shared";
-import { demoMissionInput } from "@missionmesh/shared";
+import type { AgentProfile, MissionTask } from "@bifrost/shared";
+import { demoMissionInput } from "@bifrost/shared";
 
 import { PolicyEngine } from "./policy-engine";
 import { MissionStore } from "./store";

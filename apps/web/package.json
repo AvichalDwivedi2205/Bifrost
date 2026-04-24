@@ -1,5 +1,5 @@
 {
-  "name": "@missionmesh/web",
+  "name": "@bifrost/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -13,7 +13,7 @@
     "@solana/wallet-adapter-react": "latest",
     "@solana/wallet-adapter-react-ui": "latest",
     "@solana/wallet-adapter-wallets": "latest",
-    "@missionmesh/shared": "file:../../packages/shared",
+    "@bifrost/shared": "file:../../packages/shared",
     "@solana/web3.js": "latest",
     "next": "latest",
     "react": "latest",

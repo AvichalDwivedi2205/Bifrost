@@ -1,7 +1,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { MissionChainState, MissionRecord, SpendReceipt } from "@missionmesh/shared";
+import type {
+  AgentManifest,
+  MissionChainState,
+  MissionRecord,
+  SpendReceipt,
+} from "@bifrost/shared";
 import { nanoid } from "nanoid";
 
 import { env } from "../../env";
@@ -17,7 +22,7 @@ interface MissionCreateResult {
   txSignature: string;
 }
 
-export class MissionMeshSolanaClient {
+export class BifrostSolanaClient {
   private readonly localMode =
     env.SOLANA_RPC_URL.includes("127.0.0.1") || env.SOLANA_RPC_URL.includes("localhost");
 
@@ -60,14 +65,8 @@ export class MissionMeshSolanaClient {
       return { txSignature: `prepare_${record.id}_${nanoid(8)}` };
     }
 
-    const payoutCap = Math.max(
-      Math.min(record.budget.totalBudget * 0.08, 0.15),
-      0.05,
-    );
-    const spendBudgetCap = Math.max(
-      record.budget.totalBudget - payoutCap,
-      record.budget.maxPerCall,
-    );
+    const payoutCap = Math.max(Math.min(record.budget.totalBudget * 0.08, 0.15), 0.05);
+    const spendBudgetCap = Math.max(record.budget.totalBudget - payoutCap, record.budget.maxPerCall);
 
     const result = await this.runLocalCommand([
       "prepare-mission",
@@ -155,25 +154,39 @@ export class MissionMeshSolanaClient {
       return { txSignature: `settle_${record.id}_${nanoid(6)}` };
     }
 
-    const result = await this.runLocalCommand([
-      "settle",
-      "--mission-id",
-      record.id,
-    ]);
+    const result = await this.runLocalCommand(["settle", "--mission-id", record.id]);
     return {
       txSignature: result.TX ?? `settle_${record.id}_${nanoid(6)}`,
     };
   }
 
-  async updateReputation(
-    agentId: string,
-    delta: number,
-  ): Promise<{ txSignature: string }> {
+  async updateReputation(agentId: string, delta: number): Promise<{ txSignature: string }> {
     if (!this.localMode) {
       return { txSignature: `rep_${agentId}_${delta}_${nanoid(4)}` };
     }
 
     return { txSignature: `rep_local_${agentId}_${delta}` };
+  }
+
+  async anchorAgentRegistry(
+    manifest: AgentManifest,
+    hashes: {
+      capabilityHash: string;
+      metadataHash: string;
+      privacyPolicyHash: string;
+    },
+  ): Promise<{ txSignature: string; agentRegistryPda?: string }> {
+    if (!this.localMode) {
+      return {
+        agentRegistryPda: `agent_registry_${manifest.agentId}`,
+        txSignature: `agent_reg_${manifest.agentId}_${hashes.capabilityHash.slice(0, 8)}`,
+      };
+    }
+
+    return {
+      agentRegistryPda: `agent_registry_local_${manifest.agentId}`,
+      txSignature: `agent_reg_local_${hashes.metadataHash.slice(0, 8)}`,
+    };
   }
 
   private async runLocalCommand(args: string[]): Promise<Record<string, string>> {
@@ -185,7 +198,7 @@ export class MissionMeshSolanaClient {
         "--manifest-path",
         programManifestPath,
         "--example",
-        "missionmesh_local",
+        "bifrost_local",
         "--",
         ...args,
       ],
@@ -195,8 +208,8 @@ export class MissionMeshSolanaClient {
         stderr: "pipe",
         env: {
           ...process.env,
-          MISSIONMESH_RPC_URL: env.SOLANA_RPC_URL,
-          MISSIONMESH_WS_URL: env.SOLANA_WS_URL,
+          BIFROST_RPC_URL: env.SOLANA_RPC_URL,
+          BIFROST_WS_URL: env.SOLANA_WS_URL,
         },
       },
     );

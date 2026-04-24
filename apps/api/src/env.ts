@@ -18,7 +18,7 @@ const rawEnvSchema = z.object({
   SOLANA_RPC_PROVIDER: z.string().optional(),
   RPCFAST_HTTP_URL: z.string().optional(),
   RPCFAST_WS_URL: z.string().optional(),
-  SOLANA_PROGRAM_ID: z.string().default("MissionMesh11111111111111111111111111111111"),
+  SOLANA_PROGRAM_ID: z.string().default("Bifrost11111111111111111111111111111111111"),
   DEMO_MODE: z
     .string()
     .optional()

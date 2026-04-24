@@ -1,8 +1,8 @@
-# MissionMesh
+# Bifrost
 
-MissionMesh is a Solana-native mission execution stack for governed multi-agent workflows. This repo is scaffolded as a monorepo with:
+Bifrost is a Solana-native mission execution stack for governed multi-agent workflows. This repo is scaffolded as a monorepo with:
 
-- `apps/web`: Next.js frontend inspired by the provided MissionMesh UI direction
+- `apps/web`: Next.js frontend inspired by the provided Bifrost UI direction
 - `apps/api`: Fastify + LangGraph JS backend with `OpenRouter + Vertex AI` provider adapters
 - `packages/shared`: mission, agent, event, receipt, and analytics types shared across the stack
 - `program`: native Rust Solana program skeleton for mission vault, spend, verification, settlement, and reputation state
@@ -98,4 +98,4 @@ This repo already includes:
 
 The Solana program is intentionally at the scaffold stage: it contains real account/state modules and instruction handlers, but it is not yet wired to a full SPL-token escrow lifecycle or end-to-end program tests.
 
-The API-side Solana transport in `apps/api/src/services/solana/missionmesh-client.ts` is also still a mock client that emits realistic PDAs, receipts, and tx-like ids for the demo flow. The frontend/backend connection path is real, the wallet auth is real, and the LangGraph orchestration is real, but actual devnet value movement still needs to be wired into the backend client.
+The API-side Solana transport in `apps/api/src/services/solana/bifrost-client.ts` is also still a mock client that emits realistic PDAs, receipts, and tx-like ids for the demo flow. The frontend/backend connection path is real, the wallet auth is real, and the LangGraph orchestration is real, but actual devnet value movement still needs to be wired into the backend client.

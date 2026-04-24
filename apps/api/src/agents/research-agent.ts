@@ -10,7 +10,7 @@ export class ResearchAgent extends BaseAgent {
   async execute(objective: string): Promise<ResearchOutput> {
     return this.askJson<ResearchOutput>(
       "research_wallet",
-      "You are MissionMesh's research specialist. Summarize wallet context, suspicious counterparties, and notable exposure.",
+      "You are Bifrost's research specialist. Summarize wallet context, suspicious counterparties, and notable exposure.",
       `Mission objective: ${objective}`,
       `Schema:
 {

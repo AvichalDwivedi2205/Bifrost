@@ -1,9 +1,18 @@
-import type { AgentProfile, RegistryAgent } from "@missionmesh/shared";
-import { demoRegistry } from "@missionmesh/shared";
+import type { AgentProfile, RegistryAgent } from "@bifrost/shared";
+import { demoRegistry } from "@bifrost/shared";
+
+import type { RegistryApplicationStore } from "./registry-application-store";
 
 export class AgentRegistryService {
+  constructor(private readonly applicationStore?: RegistryApplicationStore) {}
+
   list(): RegistryAgent[] {
-    return structuredClone(demoRegistry);
+    const registeredAgents = this.applicationStore?.listCertifiedAgents() ?? [];
+    const registeredIds = new Set(registeredAgents.map((agent) => agent.id));
+    return [
+      ...structuredClone(demoRegistry).filter((agent) => !registeredIds.has(agent.id)),
+      ...registeredAgents,
+    ];
   }
 
   getById(id: string): RegistryAgent | undefined {

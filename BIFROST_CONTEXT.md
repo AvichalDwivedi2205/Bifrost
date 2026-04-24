@@ -1,4 +1,4 @@
-# MissionMesh Context
+# Bifrost Context
 
 Last updated: 2026-04-10
 
@@ -9,7 +9,7 @@ It does **not** store plaintext API keys, secrets, or credential values.
 
 - Google Cloud / Vertex AI:
   - User has GCP credits available.
-  - Treat this as the primary managed provider budget for MissionMesh planning.
+- Treat this as the primary managed provider budget for Bifrost planning.
 - OpenRouter:
   - User has approximately $18 in credits.
   - Good for prototyping, model routing, and low-volume fallback usage.

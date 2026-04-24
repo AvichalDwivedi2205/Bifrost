@@ -1,4 +1,4 @@
-import type { AgentProfile, MissionEvent, MissionTask, ReputationDelta } from "@missionmesh/shared";
+import type { AgentProfile, MissionEvent, MissionTask, ReputationDelta } from "@bifrost/shared";
 import { END, START, StateGraph } from "@langchain/langgraph";
 import { nanoid } from "nanoid";
 
@@ -8,7 +8,7 @@ import { ResearchAgent } from "../agents/research-agent";
 import { RiskAgent } from "../agents/risk-agent";
 import { VerifierAgent } from "../agents/verifier-agent";
 import type { PolicyEngine } from "../services/policy-engine";
-import type { MissionMeshSolanaClient } from "../services/solana/missionmesh-client";
+import type { BifrostSolanaClient } from "../services/solana/bifrost-client";
 import type { MissionStore } from "../services/store";
 import { MissionStateAnnotation, type MissionGraphState } from "./state";
 
@@ -16,7 +16,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface MissionGraphDeps {
   store: MissionStore;
-  solana: MissionMeshSolanaClient;
+  solana: BifrostSolanaClient;
   policy: PolicyEngine;
   coordinator: CoordinatorAgent;
   research: ResearchAgent;

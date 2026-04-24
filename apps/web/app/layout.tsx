@@ -8,7 +8,7 @@ import { WalletProviderClient } from "@/components/wallet-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MissionMesh",
+  title: "Bifrost",
   description: "Solana-native mission OS for governed multi-agent execution.",
 };
 

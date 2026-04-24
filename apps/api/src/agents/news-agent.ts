@@ -10,7 +10,7 @@ export class NewsAgent extends BaseAgent {
   async execute(objective: string): Promise<NewsOutput> {
     return this.askJson<NewsOutput>(
       "news_signal",
-      "You are MissionMesh's Trump News Agent. Summarize the most relevant Trump-related public signals, timing, and headline narrative shifts for a trade mission.",
+      "You are Bifrost's Trump News Agent. Summarize the most relevant Trump-related public signals, timing, and headline narrative shifts for a trade mission.",
       `Mission objective: ${objective}`,
       `Schema:
 {

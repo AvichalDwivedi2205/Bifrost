@@ -13,7 +13,7 @@ export class ExecutionAgent extends BaseAgent {
   async execute(skepticSummary: string): Promise<ExecutionOutput> {
     return this.askJson<ExecutionOutput>(
       "trade_recommendation",
-      "You are MissionMesh's execution agent. Turn the mission analysis into a concise final trade recommendation artifact.",
+      "You are Bifrost's execution agent. Turn the mission analysis into a concise final trade recommendation artifact.",
       `Skeptic summary: ${skepticSummary}`,
       `Schema:
 {

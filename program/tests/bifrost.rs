@@ -1,5 +1,5 @@
 use borsh::BorshDeserialize;
-use missionmesh_program::{
+use bifrost_program::{
     error::MissionError,
     instruction::{
         ApproveSpendArgs, ChallengeVerificationArgs, CreateAllocationArgs, CreateMissionArgs,
@@ -82,7 +82,7 @@ impl Harness {
     async fn new(protocol_fee_bps: u16) -> Self {
         let program_id = Pubkey::new_unique();
         let mut program_test = ProgramTest::new(
-            "missionmesh_program",
+            "bifrost_program",
             program_id,
             processor!(process_instruction),
         );

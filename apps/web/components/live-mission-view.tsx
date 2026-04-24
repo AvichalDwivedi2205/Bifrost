@@ -1,11 +1,11 @@
 "use client";
 
-import type { AgentRole, MissionAuthEnvelope, MissionEvent, MissionRecord } from "@missionmesh/shared";
+import type { AgentRole, MissionAuthEnvelope, MissionEvent, MissionRecord } from "@bifrost/shared";
 import {
   buildSelectionAuthorizationMessage,
   buildSpendApprovalAuthorizationMessage,
   demoMissionRecord,
-} from "@missionmesh/shared";
+} from "@bifrost/shared";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -325,7 +325,7 @@ export function LiveMissionView({ missionId }: { missionId?: string }) {
                 })}
               </div>
               <div className="settlement-note">
-                MissionMesh will not start until you approve the selected agents with the mission authority wallet.
+                Bifrost will not start until you approve the selected agents with the mission authority wallet.
               </div>
               <button
                 className="btn bp wide"
@@ -645,7 +645,7 @@ export function LiveMissionView({ missionId }: { missionId?: string }) {
             <div className="settlement-note">
               {mission.status === "settled"
                 ? `Refunded ${mission.settlement.refundedAmount.toFixed(2)} USDC after settlement.`
-                : "MissionMesh will only release settlement after verification passes."}
+                : "Bifrost will only release settlement after verification passes."}
             </div>
           </div>
         </div>

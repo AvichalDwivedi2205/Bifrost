@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { demoMissionRecord } from "@missionmesh/shared";
+import { demoMissionRecord } from "@bifrost/shared";
 
 import { TopBar } from "@/components/topbar";
 

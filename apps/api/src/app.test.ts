@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildMissionAuthorizationMessage,
+  buildRegistryApplicationAuthorizationMessage,
   buildSelectionAuthorizationMessage,
   buildSpendApprovalAuthorizationMessage,
+  type AgentManifest,
   demoMissionInput,
-} from "@missionmesh/shared";
+} from "@bifrost/shared";
 import { Keypair } from "@solana/web3.js";
 import nacl from "tweetnacl";
 
@@ -90,6 +92,77 @@ function createSpendApprovalPayload(
   };
 }
 
+function createSignedRegistryApplicationPayload(
+  overrides: Partial<AgentManifest> = {},
+) {
+  const signer = Keypair.generate();
+  const wallet = signer.publicKey.toBase58();
+  const manifest: AgentManifest = {
+    agentId: `test-agent-${Date.now()}`,
+    slug: "test-agent",
+    name: "Test Capability Agent",
+    description: "Agent used to verify Bifrost registry certification behavior.",
+    icon: "AI",
+    ownerWallet: wallet,
+    payoutWallet: wallet,
+    verifierWallet: wallet,
+    endpointUrl: "mock://test-agent",
+    role: "custom",
+    executionMode: "callback",
+    capabilities: [
+      {
+        id: "source-backed-research",
+        label: "Source Backed Research",
+        description: "Completes source-backed research with structured evidence.",
+        version: "1.0.0",
+        inputSchema: '{ "type": "object" }',
+        outputSchema: '{ "type": "object" }',
+        requiredTools: ["bifrost-runtime"],
+        allowedServices: ["mock-sandbox"],
+        evaluationSuiteId: "generic-capability-v1",
+      },
+    ],
+    phaseSchema: [
+      {
+        id: "plan",
+        label: "Plan",
+        description: "Plan the bounded task.",
+        streams: true,
+      },
+      {
+        id: "produce",
+        label: "Produce",
+        description: "Produce structured output.",
+        streams: true,
+      },
+    ],
+    supportedServices: ["mock-sandbox"],
+    spendPolicy: {
+      maxPerCall: 0.1,
+      budgetCap: 0.5,
+      requiresHumanAbove: 0,
+    },
+    priceModel: "Mock sandbox pricing",
+    metadataUri: "mock://test-agent/metadata.json",
+    privacyPolicyUri: "mock://test-agent/privacy.json",
+    requestedEvaluationSuites: ["generic-capability-v1"],
+    signedAt: new Date().toISOString(),
+    ...overrides,
+  };
+  const issuedAt = new Date().toISOString();
+  const message = buildRegistryApplicationAuthorizationMessage(manifest, issuedAt);
+
+  return {
+    manifest,
+    auth: {
+      issuedAt,
+      signature: Buffer.from(
+        nacl.sign.detached(new TextEncoder().encode(message), signer.secretKey),
+      ).toString("base64"),
+    },
+  };
+}
+
 async function fetchMission(app: Awaited<ReturnType<typeof createApp>>["app"], missionId: string) {
   const response = await app.inject({
     method: "GET",
@@ -109,7 +182,7 @@ async function fetchMission(app: Awaited<ReturnType<typeof createApp>>["app"], m
   };
 }
 
-describe("MissionMesh API", () => {
+describe("Bifrost API", () => {
   test("rejects mission creation with an invalid wallet", async () => {
     const { app } = await createApp({ seedDemo: false });
 
@@ -342,4 +415,87 @@ describe("MissionMesh API", () => {
       await app.close();
     }
   }, localAwareTestTimeoutMs);
+
+  test("registers and certifies a callback agent capability", async () => {
+    const { app } = await createApp({ seedDemo: false });
+
+    try {
+      const payload = createSignedRegistryApplicationPayload();
+      const createResponse = await app.inject({
+        method: "POST",
+        url: "/api/registry/applications",
+        payload,
+      });
+      expect(createResponse.statusCode).toBe(201);
+      const created = createResponse.json() as {
+        application: { id: string; status: string };
+      };
+      expect(created.application.status).toBe("submitted");
+
+      const protocolResponse = await app.inject({
+        method: "POST",
+        url: `/api/registry/applications/${created.application.id}/protocol-check`,
+      });
+      expect(protocolResponse.statusCode).toBe(200);
+      expect(protocolResponse.json().application.status).toBe("protocol_check");
+
+      const evaluationResponse = await app.inject({
+        method: "POST",
+        url: `/api/registry/applications/${created.application.id}/evaluations`,
+      });
+      expect(evaluationResponse.statusCode).toBe(200);
+      const evaluated = evaluationResponse.json() as {
+        application: {
+          status: string;
+          certifiedCapabilities: Array<{ capabilityId: string }>;
+          anchorTxSignature?: string;
+        };
+        report: { status: string; overallScore: number; claimsVerified: string[] };
+      };
+      expect(evaluated.application.status).toBe("active");
+      expect(evaluated.application.certifiedCapabilities[0]?.capabilityId).toBe(
+        "source-backed-research",
+      );
+      expect(evaluated.report.status).toBe("passed");
+      expect(evaluated.report.overallScore).toBeGreaterThan(0.7);
+
+      const registryResponse = await app.inject({
+        method: "GET",
+        url: "/api/registry",
+      });
+      expect(registryResponse.statusCode).toBe(200);
+      const registry = registryResponse.json() as {
+        agents: Array<{ id: string; certifiedCapabilities?: unknown[] }>;
+      };
+      const registeredAgent = registry.agents.find(
+        (agent) => agent.id === payload.manifest.agentId,
+      );
+      expect(registeredAgent?.certifiedCapabilities?.length).toBe(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  test("rejects registry applications with invalid owner signatures", async () => {
+    const { app } = await createApp({ seedDemo: false });
+
+    try {
+      const payload = createSignedRegistryApplicationPayload();
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/registry/applications",
+        payload: {
+          ...payload,
+          auth: {
+            ...payload.auth,
+            signature: Buffer.from("bad-signature").toString("base64"),
+          },
+        },
+      });
+
+      expect(response.statusCode).toBe(401);
+    } finally {
+      await app.close();
+    }
+  });
 });

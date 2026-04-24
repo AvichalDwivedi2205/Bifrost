@@ -14,4 +14,4 @@ package-lock.json
 yarn.lock
 
 # Local Solana harness artifacts (may contain keypairs/state)
-program/.missionmesh-local/
+program/.bifrost-local/

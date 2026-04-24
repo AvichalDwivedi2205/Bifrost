@@ -1,7 +1,7 @@
 use std::{env, error::Error, path::PathBuf, thread::sleep, time::Duration};
 
 use borsh::BorshDeserialize;
-use missionmesh_program::{
+use bifrost_program::{
     instruction::{
         ApproveSpendArgs, ChallengeVerificationArgs, CreateAllocationArgs, CreateMissionArgs,
         ExecuteSpendArgs, FinalizeAllocationArgs, FundMissionArgs, InitializeProtocolArgs,
@@ -386,15 +386,15 @@ fn main() -> Result<()> {
 fn smoke_config() -> SmokeConfig {
     let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
     SmokeConfig {
-        rpc_url: env::var("MISSIONMESH_RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.to_string()),
-        payer_path: env::var("MISSIONMESH_PAYER")
+        rpc_url: env::var("BIFROST_RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.to_string()),
+        payer_path: env::var("BIFROST_PAYER")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(home).join(".config/solana/id.json")),
-        program_keypair_path: env::var("MISSIONMESH_PROGRAM_KEYPAIR")
+        program_keypair_path: env::var("BIFROST_PROGRAM_KEYPAIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
                 PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("target/deploy/missionmesh_program-keypair.json")
+                    .join("target/deploy/bifrost_program-keypair.json")
             }),
     }
 }

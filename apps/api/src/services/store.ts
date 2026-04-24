@@ -5,8 +5,8 @@ import type {
   MissionRecord,
   MissionTask,
   RegistryAgent,
-} from "@missionmesh/shared";
-import { demoMissionRecord } from "@missionmesh/shared";
+} from "@bifrost/shared";
+import { demoMissionRecord } from "@bifrost/shared";
 import { nanoid } from "nanoid";
 
 type Listener = (record: MissionRecord, event?: MissionEvent) => void;

@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BiFrost — Autonomous Agent Mission OS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"/>
+  <style>
+    :root {
+      --bg:     #04050d;
+      --bg2:    #080b18;
+      --bg3:    #0d1020;
+      --bg4:    #12162a;
+      --border: rgba(255,255,255,0.07);
+      --border2:rgba(255,255,255,0.13);
+      --text:   #f0f2ff;
+      --text2:  #8b90b8;
+      --text3:  #4a4f72;
+      --cyan:   #22d3ee;
+      --purple: #a78bfa;
+      --amber:  #fbbf24;
+      --green:  #34d399;
+      --red:    #f87171;
+      --font:   'Space Grotesk', sans-serif;
+      --mono:   'JetBrains Mono', monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+
+    /* ── NAV ────────────────────────────────── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 48px; height: 64px;
+      border-bottom: 1px solid transparent;
+      transition: all 0.3s;
+    }
+    nav.scrolled {
+      background: rgba(4,5,13,0.88);
+      backdrop-filter: blur(16px);
+      border-bottom-color: rgba(255,255,255,0.07);
+    }
+    .nav-logo { display:flex; align-items:center; gap:10px; cursor:pointer; }
+    .nav-logo-text { font-size:20px; font-weight:700; letter-spacing:-0.4px; }
+    .nav-logo-text span { color: var(--cyan); }
+    .nav-links { display:flex; gap:32px; }
+    .nav-links a {
+      font-size:13px; font-weight:500; color:var(--text2);
+      text-decoration:none; transition:color 0.15s; cursor:pointer;
+    }
+    .nav-links a:hover { color:var(--text); }
+    .nav-cta {
+      padding:9px 22px; border-radius:8px; font-size:13px; font-weight:600;
+      background:var(--cyan); color:#04050d; cursor:pointer; border:none;
+      transition:all 0.2s; font-family:var(--font);
+    }
+    .nav-cta:hover { background:#67e8f9; box-shadow:0 0 24px rgba(34,211,238,0.4); }
+
+    /* ── HERO ───────────────────────────────── */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 48px;
+      gap: 0;
+      overflow: hidden;
+      position: relative;
+    }
+    .hero-inner {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      max-width: 1180px;
+      gap: 0;
+    }
+
+    /* Subtle grid background */
+    .hero::before {
+      content:'';
+      position:absolute; inset:0;
+      background-image:
+        linear-gradient(rgba(34,211,238,0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(34,211,238,0.035) 1px, transparent 1px);
+      background-size: 56px 56px;
+      pointer-events:none;
+    }
+    /* Radial fade at edges */
+    .hero::after {
+      content:'';
+      position:absolute; inset:0;
+      background: radial-gradient(ellipse 70% 70% at 50% 50%, transparent 40%, var(--bg) 100%);
+      pointer-events:none;
+    }
+
+    .hero-left {
+      flex: 0 0 520px;
+      padding-top: 64px;
+      position: relative;
+      z-index: 2;
+    }
+
+    .hero-right {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 2;
+      min-height: 100vh;
+    }
+
+    #mission-canvas {
+      display: block;
+      /* canvas size set by JS */
+    }
+
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em;
+      text-transform: uppercase; color: var(--cyan);
+      border: 1px solid rgba(34,211,238,0.28); background: rgba(34,211,238,0.07);
+      padding: 6px 14px; border-radius: 100px; margin-bottom: 28px;
+    }
+    .eyebrow-dot {
+      width:6px; height:6px; border-radius:50%; background:var(--cyan);
+      animation: edot 1.6s ease-in-out infinite;
+    }
+    @keyframes edot { 0%,100%{opacity:1;} 50%{opacity:0.25;} }
+
+    .hero-h1 {
+      font-size: clamp(40px, 4.5vw, 68px);
+      font-weight: 700;
+      line-height: 1.03;
+      letter-spacing: -2.5px;
+      margin-bottom: 22px;
+    }
+    .hero-h1 .grad {
+      background: linear-gradient(135deg, var(--cyan) 0%, var(--purple) 55%, var(--amber) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-sub {
+      font-size: 17px; color: var(--text2); line-height: 1.7;
+      max-width: 440px; margin-bottom: 36px; font-weight: 400;
+    }
+    .hero-btns { display:flex; gap:12px; flex-wrap:wrap; margin-bottom: 48px; }
+    .btn-primary {
+      padding:13px 28px; border-radius:10px; font-size:14px; font-weight:700;
+      background:var(--cyan); color:#04050d; cursor:pointer; border:none;
+      font-family:var(--font); transition:all 0.2s;
+      display:flex; align-items:center; gap:8px;
+    }
+    .btn-primary:hover { background:#67e8f9; box-shadow:0 0 36px rgba(34,211,238,0.4); transform:translateY(-1px); }
+    .btn-ghost {
+      padding:13px 28px; border-radius:10px; font-size:14px; font-weight:600;
+      background:transparent; color:var(--text2); cursor:pointer;
+      border:1px solid rgba(255,255,255,0.13); font-family:var(--font); transition:all 0.2s;
+    }
+    .btn-ghost:hover { background:rgba(255,255,255,0.05); color:var(--text); }
+
+    /* Hero stats row */
+    .hero-stats {
+      display: flex; gap: 32px;
+    }
+    .hero-stat-val { font-family: var(--mono); font-size:22px; font-weight:700; }
+    .hero-stat-label { font-size:11px; color:var(--text3); margin-top:2px; font-family: var(--mono); letter-spacing: 0.05em; }
+
+    /* ── SCROLL HINT ─────────────────────────── */
+    .scroll-hint {
+      position: absolute; bottom: 28px; left: 48px;
+      display: flex; align-items: center; gap: 8px;
+      font-family: var(--mono); font-size: 10px; color: var(--text3);
+      letter-spacing: 0.12em; z-index: 3;
+      animation: shint 2.5s ease-in-out infinite;
+    }
+    @keyframes shint { 0%,100%{opacity:0.5;transform:translateY(0);} 50%{opacity:1;transform:translateY(4px);} }
+    .scroll-arr {
+      width:16px; height:16px; border-right:1.5px solid currentColor;
+      border-bottom:1.5px solid currentColor; transform:rotate(45deg);
+    }
+
+    /* ── SECTIONS ───────────────────────────── */
+    section { padding:110px 48px; max-width:1200px; margin:0 auto; }
+    .reveal { opacity:0; transform:translateY(28px); transition:opacity 0.65s ease, transform 0.65s ease; }
+    .reveal.visible { opacity:1; transform:translateY(0); }
+    .reveal-delay-1 { transition-delay:0.1s; }
+    .reveal-delay-2 { transition-delay:0.2s; }
+    .reveal-delay-3 { transition-delay:0.3s; }
+    .reveal-delay-4 { transition-delay:0.4s; }
+    .reveal-delay-5 { transition-delay:0.5s; }
+    .sec-label {
+      font-family:var(--mono); font-size:10px; letter-spacing:0.18em;
+      text-transform:uppercase; color:var(--cyan); margin-bottom:14px;
+      display:flex; align-items:center; gap:10px;
+    }
+    .sec-label::before { content:''; width:24px; height:1px; background:var(--cyan); }
+    .sec-h2 { font-size:clamp(30px,4vw,50px); font-weight:700; letter-spacing:-1.5px; line-height:1.08; margin-bottom:14px; }
+    .sec-sub { font-size:16px; color:var(--text2); line-height:1.65; max-width:580px; }
+
+    /* ── METRICS STRIP ──────────────────────── */
+    .metrics-strip {
+      background:var(--bg2); border-top:1px solid var(--border); border-bottom:1px solid var(--border);
+      padding:36px 0; display:grid; grid-template-columns:repeat(4,1fr); max-width:100%;
+    }
+    .metric-item { padding:0 40px; text-align:center; border-right:1px solid var(--border); }
+    .metric-item:last-child { border-right:none; }
+    .metric-val { font-size:42px; font-weight:700; letter-spacing:-2px; font-family:var(--mono); margin-bottom:6px; }
+    .metric-label { font-size:11px; color:var(--text3); letter-spacing:0.05em; }
+
+    /* ── HOW IT WORKS ───────────────────────── */
+    .steps-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:2px; margin-top:60px; }
+    .step-card {
+      background:var(--bg2); border:1px solid var(--border);
+      padding:34px 30px 30px; position:relative; overflow:hidden;
+      transition:border-color 0.25s, transform 0.25s;
+    }
+    .step-card:first-child { border-radius:16px 0 0 16px; }
+    .step-card:last-child  { border-radius:0 16px 16px 0; }
+    .step-card:hover { border-color:var(--border2); transform:translateY(-3px); }
+    .step-num { font-family:var(--mono); font-size:68px; font-weight:700; color:rgba(255,255,255,0.04); position:absolute; top:10px; right:18px; line-height:1; }
+    .step-icon { width:50px; height:50px; border-radius:14px; margin-bottom:18px; display:flex; align-items:center; justify-content:center; font-size:22px; }
+    .step-title { font-size:19px; font-weight:700; margin-bottom:10px; letter-spacing:-0.3px; }
+    .step-desc  { font-size:13px; color:var(--text2); line-height:1.65; }
+    .step-tags  { display:flex; flex-wrap:wrap; gap:5px; margin-top:18px; }
+    .step-tag { font-family:var(--mono); font-size:10px; padding:2px 7px; border-radius:4px; border:1px solid var(--border2); color:var(--text3); }
+
+    /* ── FEATURES GRID ──────────────────────── */
+    .features-grid {
+      display:grid; grid-template-columns:repeat(4,1fr); gap:1px;
+      background:var(--border); border:1px solid var(--border); border-radius:16px; overflow:hidden; margin-top:60px;
+    }
+    .feature-card { background:var(--bg2); padding:26px 22px; transition:background 0.2s; }
+    .feature-card:hover { background:var(--bg3); }
+    .feature-icon  { font-size:24px; margin-bottom:14px; }
+    .feature-title { font-size:14px; font-weight:700; margin-bottom:7px; letter-spacing:-0.2px; }
+    .feature-desc  { font-size:12px; color:var(--text2); line-height:1.6; }
+
+    /* ── FLOW DEMO PANEL ────────────────────── */
+    .flow-section { background:var(--bg2); border-top:1px solid var(--border); border-bottom:1px solid var(--border); padding:100px 48px; }
+    .flow-inner   { max-width:1200px; margin:0 auto; }
+    .flow-demo    { background:var(--bg3); border:1px solid var(--border); border-radius:16px; overflow:hidden; margin-top:52px; }
+    .flow-topbar  { padding:13px 18px; background:var(--bg2); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:7px; }
+    .tl-dot { width:10px; height:10px; border-radius:50%; }
+    .flow-body { padding:24px; display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+    .flow-panel { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:16px; }
+    .flow-panel-title { font-family:var(--mono); font-size:10px; color:var(--text3); letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px; }
+    .agent-row { display:flex; align-items:center; gap:9px; padding:7px 0; border-bottom:1px solid rgba(255,255,255,0.04); }
+    .agent-row:last-child { border-bottom:none; }
+    .agent-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+    .receipt-row { font-family:var(--mono); font-size:11px; color:var(--text3); padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.04); display:flex; justify-content:space-between; }
+    .receipt-row:last-child { border-bottom:none; }
+
+    /* ── ON-CHAIN ───────────────────────────── */
+    .onchain-grid { display:grid; grid-template-columns:1fr 1fr; gap:60px; align-items:center; margin-top:60px; }
+    .onchain-card { background:var(--bg2); border:1px solid var(--border); border-radius:16px; overflow:hidden; }
+    .onchain-header { padding:14px 18px; background:var(--bg3); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:11px; color:var(--text3); }
+    .onchain-body { padding:18px; }
+    .prog-line { padding:7px 0; border-bottom:1px solid rgba(255,255,255,0.04); display:flex; align-items:center; gap:9px; font-family:var(--mono); font-size:12px; }
+    .prog-line:last-child { border-bottom:none; }
+    .prog-kw   { color:var(--purple); }
+    .prog-fn   { color:var(--cyan); }
+    .prog-cmt  { color:var(--text3); font-size:11px; }
+    .oc-feature { margin-bottom:26px; }
+    .oc-feature-title { font-size:17px; font-weight:700; margin-bottom:7px; letter-spacing:-0.3px; }
+    .oc-feature-desc  { font-size:13px; color:var(--text2); line-height:1.65; }
+
+    /* ── AGENT STRIP ────────────────────────── */
+    .agents-strip { display:flex; gap:0; overflow-x:auto; padding:0 48px; scrollbar-width:none; }
+    .agents-strip::-webkit-scrollbar { display:none; }
+    .agent-showcase {
+      flex:0 0 210px; background:var(--bg2); border:1px solid var(--border);
+      padding:22px 18px; margin-right:-1px;
+      transition:background 0.2s, transform 0.2s; cursor:pointer; position:relative;
+    }
+    .agent-showcase:first-child { border-radius:16px 0 0 16px; }
+    .agent-showcase:last-child  { border-radius:0 16px 16px 0; margin-right:0; }
+    .agent-showcase:hover { background:var(--bg3); z-index:2; transform:translateY(-4px); box-shadow:0 12px 40px rgba(0,0,0,0.4); }
+    .as-emoji { font-size:30px; margin-bottom:12px; }
+    .as-name  { font-size:14px; font-weight:700; margin-bottom:3px; }
+    .as-role  { font-family:var(--mono); font-size:9px; color:var(--text3); letter-spacing:0.08em; text-transform:uppercase; margin-bottom:10px; }
+    .as-trust { font-family:var(--mono); font-size:20px; font-weight:700; }
+    .as-trust-label { font-size:9px; color:var(--text3); font-family:var(--mono); }
+
+    /* ── CTA ────────────────────────────────── */
+    .cta-section {
+      text-align:center; padding:130px 48px;
+      background:radial-gradient(ellipse 80% 55% at 50% 100%, rgba(34,211,238,0.055) 0%, transparent 70%);
+      position:relative; overflow:hidden;
+    }
+    .cta-glow { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:600px; height:400px; background:radial-gradient(ellipse, rgba(34,211,238,0.07) 0%, transparent 70%); pointer-events:none; }
+    .cta-h2   { font-size:clamp(34px,5vw,60px); font-weight:700; letter-spacing:-2px; margin-bottom:18px; }
+    .cta-sub  { font-size:16px; color:var(--text2); max-width:480px; margin:0 auto 44px; line-height:1.65; }
+    .grad { background:linear-gradient(135deg,var(--cyan) 0%,var(--purple) 55%,var(--amber) 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+
+    /* ── FOOTER ─────────────────────────────── */
+    footer { border-top:1px solid var(--border); padding:38px 48px; display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--text3); }
+
+    /* ── WALLET MODAL ───────────────────────── */
+    .modal-overlay { position:fixed; inset:0; z-index:200; background:rgba(4,5,13,0.85); backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none; transition:opacity 0.2s; }
+    .modal-overlay.open { opacity:1; pointer-events:all; }
+    .modal-box { background:#0d1020; border:1px solid rgba(255,255,255,0.12); border-radius:20px; padding:34px; width:390px; box-shadow:0 32px 100px rgba(0,0,0,0.8), 0 0 0 1px rgba(34,211,238,0.08); transform:translateY(20px) scale(0.97); transition:transform 0.25s ease; }
+    .modal-overlay.open .modal-box { transform:translateY(0) scale(1); }
+    .modal-title { font-size:19px; font-weight:700; letter-spacing:-0.4px; margin-bottom:5px; }
+    .modal-sub   { font-size:12px; color:var(--text2); margin-bottom:24px; line-height:1.5; }
+    .wallet-option { display:flex; align-items:center; gap:13px; padding:13px 15px; border-radius:12px; border:1px solid var(--border2); background:var(--bg3); cursor:pointer; margin-bottom:9px; transition:all 0.15s; }
+    .wallet-option:hover { background:var(--bg4); border-color:rgba(34,211,238,0.38); transform:translateX(2px); }
+    .wallet-icon { font-size:24px; flex-shrink:0; }
+    .wallet-name { font-weight:700; font-size:14px; margin-bottom:2px; }
+    .wallet-desc { font-size:10px; color:var(--text3); }
+    .wallet-arrow { margin-left:auto; color:var(--text3); font-size:17px; }
+    .modal-note { font-size:10px; color:var(--text3); text-align:center; margin-top:14px; font-family:var(--mono); }
+    .modal-close { float:right; background:none; border:none; color:var(--text3); cursor:pointer; font-size:20px; margin-top:-4px; }
+    .connecting-state { text-align:center; padding:16px 0; }
+    .spin { width:44px; height:44px; border-radius:50%; border:2px solid rgba(34,211,238,0.15); border-top-color:var(--cyan); animation:spin 0.8s linear infinite; margin:0 auto 14px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<!-- ── NAV ────────────────────────────────────────────── -->
+<nav id="nav">
+  <div class="nav-logo" onclick="scrollTo({top:0,behavior:'smooth'})">
+    <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
+      <rect width="32" height="32" rx="8" fill="#080b18"/>
+      <path d="M5 22 Q16 6 27 22" stroke="#22d3ee" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+      <path d="M8 22 Q16 10 24 22" stroke="#a78bfa" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.7"/>
+      <path d="M11 22 Q16 14 21 22" stroke="#fbbf24" stroke-width="1.2" fill="none" stroke-linecap="round" opacity="0.7"/>
+      <circle cx="5"  cy="22" r="2"   fill="#22d3ee"/>
+      <circle cx="27" cy="22" r="2"   fill="#22d3ee"/>
+      <circle cx="16" cy="8.5" r="2.5" fill="#fbbf24" opacity="0.9"/>
+    </svg>
+    <div class="nav-logo-text">Bi<span>Frost</span></div>
+  </div>
+  <div class="nav-links">
+    <a onclick="document.getElementById('how').scrollIntoView({behavior:'smooth'})">How It Works</a>
+    <a onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'})">Features</a>
+    <a onclick="document.getElementById('agents').scrollIntoView({behavior:'smooth'})">Agents</a>
+    <a onclick="document.getElementById('onchain').scrollIntoView({behavior:'smooth'})">On-Chain</a>
+  </div>
+  <button class="nav-cta" onclick="openWallet()">Connect Wallet</button>
+</nav>
+
+<!-- ── HERO ───────────────────────────────────────────── -->
+<div class="hero">
+  <div class="hero-inner">
+  <!-- LEFT: text -->
+  <div class="hero-left">
+    <div class="hero-eyebrow">
+      <div class="eyebrow-dot"></div>
+      Solana · Multi-Agent · On-Chain Settlement
+    </div>
+    <h1 class="hero-h1">
+      The Agent<br/>
+      <span class="grad">Mission OS.</span>
+    </h1>
+    <p class="hero-sub">
+      Deploy governed networks of specialized AI agents.
+      Each agent is tasked, tracked, and paid on-chain.
+      Every mission: wallet-signed, human-gated, verifiably settled.
+    </p>
+    <div class="hero-btns">
+      <button class="btn-primary" onclick="openWallet()">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="4" width="12" height="9" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M2 7h12" stroke="currentColor" stroke-width="1.5"/><circle cx="11.5" cy="10" r="1" fill="currentColor"/></svg>
+        Connect Wallet
+      </button>
+      <button class="btn-ghost" onclick="document.getElementById('how').scrollIntoView({behavior:'smooth'})">
+        How it works →
+      </button>
+    </div>
+    <div class="hero-stats">
+      <div>
+        <div class="hero-stat-val" style="color:var(--cyan)">148+</div>
+        <div class="hero-stat-label">MISSIONS SETTLED</div>
+      </div>
+      <div>
+        <div class="hero-stat-val" style="color:var(--green)">97.3%</div>
+        <div class="hero-stat-label">VERIFY PASS RATE</div>
+      </div>
+      <div>
+        <div class="hero-stat-val" style="color:var(--amber)">$24.8K</div>
+        <div class="hero-stat-label">VALUE ON-CHAIN</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: pentagon animation -->
+  <div class="hero-right">
+    <canvas id="mission-canvas" style="width:560px;height:560px"></canvas>
+  </div>
+
+  </div><!-- /.hero-inner -->
+  <div class="scroll-hint">
+    <div class="scroll-arr"></div>
+    SCROLL
+  </div>
+</div>
+
+<!-- ── METRICS STRIP ──────────────────────────────────── -->
+<div class="metrics-strip">
+  <div class="metric-item reveal">
+    <div class="metric-val" style="color:var(--cyan)">148+</div>
+    <div class="metric-label">Missions Completed</div>
+  </div>
+  <div class="metric-item reveal reveal-delay-1">
+    <div class="metric-val" style="color:var(--purple)">1,842</div>
+    <div class="metric-label">Agent Tasks Executed</div>
+  </div>
+  <div class="metric-item reveal reveal-delay-2">
+    <div class="metric-val" style="color:var(--amber)">$24.8K</div>
+    <div class="metric-label">Total Value Settled</div>
+  </div>
+  <div class="metric-item reveal reveal-delay-3">
+    <div class="metric-val" style="color:var(--green)">97.3%</div>
+    <div class="metric-label">Verification Pass Rate</div>
+  </div>
+</div>
+
+<!-- ── HOW IT WORKS ────────────────────────────────────── -->
+<section id="how">
+  <div class="sec-label reveal">How It Works</div>
+  <h2 class="sec-h2 reveal">From objective to<br/>on-chain settlement.</h2>
+  <p class="sec-sub reveal">Three phases. Governed at every step. Verifiable on Solana.</p>
+  <div class="steps-grid">
+    <div class="step-card reveal">
+      <div class="step-num">01</div>
+      <div class="step-icon" style="background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.18)">🎯</div>
+      <div class="step-title">Define Mission</div>
+      <div class="step-desc">Set your objective, budget, success criteria, and curate your agent team. Sign with your Solana wallet to authorize the mission on-chain.</div>
+      <div class="step-tags"><span class="step-tag">wallet-signed</span><span class="step-tag">budget-locked</span><span class="step-tag">agent-selection</span></div>
+    </div>
+    <div class="step-card reveal reveal-delay-2">
+      <div class="step-num">02</div>
+      <div class="step-icon" style="background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.18)">⚡</div>
+      <div class="step-title">Agents Execute</div>
+      <div class="step-desc">Your agent mesh runs in sequence. Each agent researches, analyzes, challenges, and packages results. Every paid tool call needs your approval.</div>
+      <div class="step-tags"><span class="step-tag">spend-gates</span><span class="step-tag">receipts</span><span class="step-tag">live-stream</span></div>
+    </div>
+    <div class="step-card reveal reveal-delay-4">
+      <div class="step-num">03</div>
+      <div class="step-icon" style="background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.18)">✅</div>
+      <div class="step-title">Verify & Settle</div>
+      <div class="step-desc">The Verifier audits all outputs, submits a cryptographic proof bundle to the Solana program, and triggers USDC settlement. Reputation updated on-chain.</div>
+      <div class="step-tags"><span class="step-tag">proof-bundle</span><span class="step-tag">usdc-settlement</span><span class="step-tag">reputation</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── LIVE DEMO PANEL ─────────────────────────────────── -->
+<div class="flow-section">
+  <div class="flow-inner">
+    <div class="sec-label reveal">Live Execution</div>
+    <h2 class="sec-h2 reveal">Watch the mission<br/>run in real time.</h2>
+    <div class="flow-demo reveal">
+      <div class="flow-topbar">
+        <div class="tl-dot" style="background:#ff5f57"></div>
+        <div class="tl-dot" style="background:#ffbd2e"></div>
+        <div class="tl-dot" style="background:#28c840"></div>
+        <span style="margin-left:8px;font-family:var(--mono);font-size:11px;color:rgba(255,255,255,0.28)">bifrost.app/live?id=msn_x7k2p</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
+          <div style="width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green)"></div>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--green)">LIVE</span>
+        </div>
+      </div>
+      <div class="flow-body">
+        <div class="flow-panel">
+          <div class="flow-panel-title">Agent Status Board</div>
+          <div class="agent-row">
+            <div class="agent-dot" style="background:var(--green);box-shadow:0 0 5px var(--green)"></div>
+            <span style="font-size:15px">📰</span>
+            <div style="flex:1"><div style="font-size:12px;font-weight:600">NewsAgent</div><div style="font-size:10px;color:var(--text3);font-family:var(--mono)">synthesize signal</div></div>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--green)">settled</span>
+          </div>
+          <div class="agent-row">
+            <div class="agent-dot" style="background:var(--cyan);box-shadow:0 0 5px var(--cyan);animation:edot 1.5s infinite"></div>
+            <span style="font-size:15px">📈</span>
+            <div style="flex:1"><div style="font-size:12px;font-weight:600">MarketAgent</div><div style="font-size:10px;color:var(--text3);font-family:var(--mono)">scan orderflow ●</div></div>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--cyan)">running</span>
+          </div>
+          <div class="agent-row">
+            <div class="agent-dot" style="background:var(--text3)"></div>
+            <span style="font-size:15px">🔍</span>
+            <div style="flex:1"><div style="font-size:12px;font-weight:600">SkepticAgent</div><div style="font-size:10px;color:var(--text3);font-family:var(--mono)">queued</div></div>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--text3)">pending</span>
+          </div>
+          <div class="agent-row">
+            <div class="agent-dot" style="background:var(--text3)"></div>
+            <span style="font-size:15px">⚡</span>
+            <div style="flex:1"><div style="font-size:12px;font-weight:600">ExecutionAgent</div><div style="font-size:10px;color:var(--text3);font-family:var(--mono)">queued</div></div>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--text3)">pending</span>
+          </div>
+          <div class="agent-row">
+            <div class="agent-dot" style="background:var(--text3)"></div>
+            <span style="font-size:15px">✅</span>
+            <div style="flex:1"><div style="font-size:12px;font-weight:600">VerifierAgent</div><div style="font-size:10px;color:var(--text3);font-family:var(--mono)">queued</div></div>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--text3)">pending</span>
+          </div>
+        </div>
+        <div class="flow-panel">
+          <div class="flow-panel-title">Spend Receipts · On-Chain</div>
+          <div class="receipt-row"><span style="color:var(--text2)">NewsAgent → Perplexity</span><span style="color:var(--amber)">$1.20 USDC</span></div>
+          <div class="receipt-row"><span style="color:var(--text2)">NewsAgent → BraveSearch</span><span style="color:var(--amber)">$0.40 USDC</span></div>
+          <div class="receipt-row"><span style="color:var(--text2)">MarketAgent → Polymarket</span><span style="color:var(--amber)">$0.80 USDC</span></div>
+          <div class="receipt-row" style="opacity:0.35"><span style="color:var(--text3)">SkepticAgent → OpenRouter</span><span style="color:var(--text3)">pending…</span></div>
+          <div style="margin-top:14px;padding:11px;background:rgba(251,191,36,0.07);border:1px solid rgba(251,191,36,0.22);border-radius:8px">
+            <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px"><span style="font-size:13px">⚠️</span><span style="font-size:12px;font-weight:700;color:var(--amber)">Spend Gate</span></div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:9px">MarketAgent requires $0.80 for Polymarket API access</div>
+            <div style="display:flex;gap:6px">
+              <div style="flex:1;padding:6px;background:var(--cyan);color:#04050d;border-radius:6px;font-size:11px;font-weight:700;text-align:center;cursor:pointer">✔ Approve</div>
+              <div style="padding:6px 10px;border:1px solid rgba(248,113,113,0.4);color:#f87171;border-radius:6px;font-size:11px;cursor:pointer">✕</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── FEATURES ────────────────────────────────────────── -->
+<section id="features">
+  <div class="sec-label reveal">Platform Features</div>
+  <h2 class="sec-h2 reveal">Every layer,<br/>governed and verifiable.</h2>
+  <div class="features-grid">
+    <div class="feature-card reveal"><div class="feature-icon">🕸</div><div class="feature-title">Multi-Agent Mesh</div><div class="feature-desc">Parallel agent roles each with phase-level tracking and dependency ordering.</div></div>
+    <div class="feature-card reveal reveal-delay-1"><div class="feature-icon">🔐</div><div class="feature-title">Wallet-Signed Auth</div><div class="feature-desc">Every action requires a fresh Ed25519 signature from your Phantom or Solflare wallet.</div></div>
+    <div class="feature-card reveal reveal-delay-2"><div class="feature-icon">⛓</div><div class="feature-title">Native Solana Program</div><div class="feature-desc">Custom Rust program manages missions, allocations, spend receipts, and reputation.</div></div>
+    <div class="feature-card reveal reveal-delay-3"><div class="feature-icon">👁</div><div class="feature-title">Human-in-the-Loop</div><div class="feature-desc">Mission pauses at every spend gate. No agent spends without your signature.</div></div>
+    <div class="feature-card reveal reveal-delay-1"><div class="feature-icon">📡</div><div class="feature-title">Live WebSocket Stream</div><div class="feature-desc">Mission state streams to your browser in real time. Watch every phase as it happens.</div></div>
+    <div class="feature-card reveal reveal-delay-2"><div class="feature-icon">🏆</div><div class="feature-title">Portable Reputation</div><div class="feature-desc">Every agent earns an on-chain trust score. Immutable reputation history.</div></div>
+    <div class="feature-card reveal reveal-delay-3"><div class="feature-icon">🛡</div><div class="feature-title">Policy Engine</div><div class="feature-desc">Budget caps, per-call maximums, service allowlists enforced both off- and on-chain.</div></div>
+    <div class="feature-card reveal reveal-delay-4"><div class="feature-icon">📋</div><div class="feature-title">Proof Bundles</div><div class="feature-desc">The Verifier packages cryptographic proof of every output and spend. Settled on Solana.</div></div>
+  </div>
+</section>
+
+<!-- ── ON-CHAIN ────────────────────────────────────────── -->
+<section id="onchain" style="padding-bottom:0;max-width:100%;padding-left:0;padding-right:0">
+  <div style="max-width:1200px;margin:0 auto;padding:0 48px 110px">
+    <div class="sec-label reveal">Solana Program</div>
+    <h2 class="sec-h2 reveal">Enforcement at<br/>the protocol layer.</h2>
+    <div class="onchain-grid">
+      <div>
+        <div class="oc-feature reveal"><div class="oc-feature-title">Native Rust. No Anchor.</div><div class="oc-feature-desc">Written as a native Solana program with explicit Borsh instruction serialization, PDA derivation, and SPL token validation. Every constraint enforced at the bytecode level.</div></div>
+        <div class="oc-feature reveal reveal-delay-1"><div class="oc-feature-title">Full Mission Lifecycle.</div><div class="oc-feature-desc">create → fund → activate → allocate → spend → verify → settle. Every state transition validated on-chain before execution proceeds.</div></div>
+        <div class="oc-feature reveal reveal-delay-2"><div class="oc-feature-title">Dispute & Challenge Window.</div><div class="oc-feature-desc">Any verification result can be challenged within the configured window. Disputes resolved through a structured on-chain process with slashing implications.</div></div>
+      </div>
+      <div class="onchain-card reveal reveal-delay-2">
+        <div class="onchain-header"><div style="width:7px;height:7px;border-radius:50%;background:var(--cyan)"></div>bifrost_program · lib.rs</div>
+        <div class="onchain-body">
+          <div class="prog-line"><span class="prog-kw">pub fn</span>&nbsp;<span class="prog-fn">create_mission</span>(ctx, params) <span class="prog-cmt">// wallet-signed</span></div>
+          <div class="prog-line"><span class="prog-kw">pub fn</span>&nbsp;<span class="prog-fn">fund_mission</span>(ctx, amount) <span class="prog-cmt">// USDC escrow</span></div>
+          <div class="prog-line"><span class="prog-kw">pub fn</span>&nbsp;<span class="prog-fn">create_allocation</span>(ctx, caps) <span class="prog-cmt">// per-agent</span></div>
+          <div class="prog-line"><span class="prog-kw">pub fn</span>&nbsp;<span class="prog-fn">approve_spend</span>(ctx, id) <span class="prog-cmt">// human gate</span></div>
+          <div class="prog-line"><span class="prog-kw">pub fn</span>&nbsp;<span class="prog-fn">execute_spend</span>(ctx, amount) <span class="prog-cmt">// cap enforced</span></div>
+          <div class="prog-line"><span class="prog-kw">pub fn</span>&nbsp;<span class="prog-fn">submit_verification</span>(ctx, proof) <span class="prog-cmt">// proof hash</span></div>
+          <div class="prog-line"><span class="prog-kw">pub fn</span>&nbsp;<span class="prog-fn">settle_allocation</span>(ctx) <span class="prog-cmt">// USDC release</span></div>
+          <div class="prog-line"><span class="prog-kw">pub fn</span>&nbsp;<span class="prog-fn">challenge_verification</span>(ctx) <span class="prog-cmt">// dispute</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── AGENT SHOWCASE ──────────────────────────────────── -->
+<section id="agents" style="padding-bottom:0;padding-left:0;padding-right:0;max-width:100%">
+  <div style="padding:0 48px 48px"><div class="sec-label reveal">Agent Registry</div><h2 class="sec-h2 reveal">A curated mesh of<br/>specialized agents.</h2></div>
+  <div class="agents-strip reveal">
+    <div class="agent-showcase"><div class="as-emoji">📰</div><div class="as-name">NewsAgent</div><div class="as-role">Research</div><div class="as-trust" style="color:var(--purple)">96%</div><div class="as-trust-label">trust score</div></div>
+    <div class="agent-showcase"><div class="as-emoji">📈</div><div class="as-name">MarketAgent</div><div class="as-role">Finance</div><div class="as-trust" style="color:var(--amber)">94%</div><div class="as-trust-label">trust score</div></div>
+    <div class="agent-showcase"><div class="as-emoji">🔍</div><div class="as-name">SkepticAgent</div><div class="as-role">Analysis</div><div class="as-trust" style="color:var(--green)">92%</div><div class="as-trust-label">trust score</div></div>
+    <div class="agent-showcase"><div class="as-emoji">⚡</div><div class="as-name">ExecutionAgent</div><div class="as-role">Strategy</div><div class="as-trust" style="color:var(--green)">97%</div><div class="as-trust-label">trust score</div></div>
+    <div class="agent-showcase"><div class="as-emoji">✅</div><div class="as-name">VerifierAgent</div><div class="as-role">Compliance</div><div class="as-trust" style="color:var(--cyan)">99%</div><div class="as-trust-label">trust score</div></div>
+    <div class="agent-showcase"><div class="as-emoji">🎯</div><div class="as-name">Coordinator</div><div class="as-role">Orchestration</div><div class="as-trust" style="color:var(--cyan)">95%</div><div class="as-trust-label">trust score</div></div>
+    <div class="agent-showcase"><div class="as-emoji">🦀</div><div class="as-name">OpenClaw</div><div class="as-role">Research</div><div class="as-trust" style="color:var(--purple)">88%</div><div class="as-trust-label">trust score</div></div>
+    <div class="agent-showcase" style="border-radius:0 16px 16px 0;background:rgba(34,211,238,0.03);border-color:rgba(34,211,238,0.18);cursor:default;">
+      <div style="height:100%;display:flex;flex-direction:column;justify-content:center;gap:10px;padding:8px 0">
+        <div style="font-size:22px;opacity:0.3">+</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text2)">Register Agent</div>
+        <div style="font-size:10px;color:var(--text3);line-height:1.5">Certification coming soon</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA ─────────────────────────────────────────────── -->
+<section class="cta-section">
+  <div class="cta-glow"></div>
+  <div class="sec-label reveal" style="justify-content:center">Get Started</div>
+  <h2 class="cta-h2 reveal">Ready to launch<br/><span class="grad">your first mission?</span></h2>
+  <p class="cta-sub reveal">Connect your Solana wallet and deploy a governed agent mission in under two minutes.</p>
+  <div class="reveal" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+    <button class="btn-primary" onclick="openWallet()">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="4" width="12" height="9" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M2 7h12" stroke="currentColor" stroke-width="1.5"/><circle cx="11.5" cy="10" r="1" fill="currentColor"/></svg>
+      Connect Wallet
+    </button>
+    <button class="btn-ghost" onclick="location.href='Bifrost.html'">Open Dashboard →</button>
+  </div>
+  <div class="reveal" style="margin-top:24px;font-family:var(--mono);font-size:10px;color:var(--text3)">Solana Devnet · No mainnet funds required</div>
+</section>
+
+<!-- ── FOOTER ──────────────────────────────────────────── -->
+<footer>
+  <div style="display:flex;align-items:center;gap:10px">
+    <svg width="18" height="18" viewBox="0 0 32 32" fill="none"><path d="M5 22 Q16 6 27 22" stroke="#22d3ee" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M8 22 Q16 10 24 22" stroke="#a78bfa" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.7"/><circle cx="16" cy="8.5" r="2" fill="#fbbf24" opacity="0.9"/></svg>
+    <span style="font-weight:600">BiFrost</span>
+    <span style="color:var(--text3)">· Autonomous Agent Mission OS · Solana</span>
+  </div>
+  <div style="font-family:var(--mono);font-size:10px;color:var(--text3)">© 2026 BiFrost · Devnet · Program: BiFr…9mKz</div>
+</footer>
+
+<!-- ── WALLET MODAL ────────────────────────────────────── -->
+<div class="modal-overlay" id="wallet-modal">
+  <div class="modal-box">
+    <div id="wmc">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+        <div class="modal-title">Connect Wallet</div>
+        <button class="modal-close" onclick="closeWallet()">×</button>
+      </div>
+      <div class="modal-sub">Choose your Solana wallet to access Mission Control.</div>
+      <div class="wallet-option" onclick="connectWallet('Phantom')">
+        <div class="wallet-icon">👻</div>
+        <div><div class="wallet-name">Phantom</div><div class="wallet-desc">Browser extension · Recommended</div></div>
+        <div class="wallet-arrow">›</div>
+      </div>
+      <div class="wallet-option" onclick="connectWallet('Solflare')">
+        <div class="wallet-icon">🔆</div>
+        <div><div class="wallet-name">Solflare</div><div class="wallet-desc">Browser extension · Solana native</div></div>
+        <div class="wallet-arrow">›</div>
+      </div>
+      <div class="modal-note">Connecting to Solana Devnet · No mainnet funds needed</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── NAV SCROLL ──────────────────────────────────────────
+window.addEventListener('scroll', () => {
+  document.getElementById('nav').classList.toggle('scrolled', scrollY > 40);
+});
+
+// ── SCROLL REVEAL ────────────────────────────────────────
+const ro = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); }), { threshold: 0.1, rootMargin:'0px 0px -40px 0px' });
+document.querySelectorAll('.reveal').forEach(el => ro.observe(el));
+
+// ── WALLET MODAL ─────────────────────────────────────────
+function openWallet()  { document.getElementById('wallet-modal').classList.add('open'); }
+function closeWallet() { document.getElementById('wallet-modal').classList.remove('open'); }
+document.getElementById('wallet-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeWallet(); });
+function connectWallet(name) {
+  document.getElementById('wmc').innerHTML = `<div class="connecting-state"><div class="spin"></div><div style="font-size:15px;font-weight:700;margin-bottom:7px">Connecting to ${name}…</div><div style="font-size:11px;color:var(--text3);font-family:var(--mono)">Confirm in wallet extension</div></div>`;
+  setTimeout(() => {
+    document.getElementById('wmc').innerHTML = `<div class="connecting-state"><div style="font-size:44px;margin-bottom:14px">✅</div><div style="font-size:15px;font-weight:700;margin-bottom:7px">Wallet Connected!</div><div style="font-family:var(--mono);font-size:11px;color:var(--cyan);margin-bottom:20px">7xKp…3mFQ · Devnet</div><button class="btn-primary" style="width:100%;justify-content:center" onclick="location.href='Bifrost.html'">Open Mission Control →</button></div>`;
+  }, 1600);
+}
+
+// ══════════════════════════════════════════════════════════
+// PENTAGON MISSION ANIMATION
+// ══════════════════════════════════════════════════════════
+(function() {
+  const canvas = document.getElementById('mission-canvas');
+  const ctx    = canvas.getContext('2d');
+
+  // Size canvas — use explicit 560 or available width, whichever is smaller
+  function resize() {
+    const size = Math.min(canvas.offsetWidth || 560, 560);
+    canvas.width  = size;
+    canvas.height = size;
+  }
+  canvas.style.width  = '560px';
+  canvas.style.height = '560px';
+  resize();
+  window.addEventListener('resize', resize);
+
+  // ── AGENT DEFINITIONS ──────────────────────────────────
+  const AGENTS = [
+    { name:'Coordinator', role:'Orchestration',    emoji:'🎯', color:'#22d3ee', action:'Dispatching mission…'     },
+    { name:'NewsAgent',   role:'Research',          emoji:'📰', color:'#a78bfa', action:'Gathering headlines…'     },
+    { name:'MarketAgent', role:'Finance',           emoji:'📈', color:'#fbbf24', action:'Scanning Polymarket…'     },
+    { name:'SkepticAgent',role:'Analysis',          emoji:'🔍', color:'#f472b6', action:'Challenging thesis…'      },
+    { name:'Verifier',    role:'Settlement',        emoji:'✅', color:'#34d399', action:'Settling on-chain…'       },
+  ];
+
+  // Pentagon edges for mission flow (sequence):
+  // 0(Coordinator) → 1(News) → 2(Market) → 3(Skeptic) → 4(Verifier) → 0(complete)
+  const FLOW_EDGES = [[0,1],[1,2],[2,3],[3,4],[4,0]];
+
+  // ── PAYMENT LABELS per edge ─────────────────────────────
+  const EDGE_LABELS = [
+    'Mission dispatched',
+    '$1.20 USDC approved',
+    '$0.80 USDC approved',
+    '$1.40 USDC approved',
+    'Proof: on-chain ✓',
+  ];
+
+  // ── STATE MACHINE ───────────────────────────────────────
+  // PHASES: init → active_0 → edge_0 → active_1 → edge_1 → ... → active_4 → edge_4 → complete → reset
+  const PHASE_DURATION = {
+    init:       2200,
+    active_agent: 1800,
+    travel_edge:  1600,
+    complete:   3400,
+    reset:       800,
+  };
+
+  // All phases in order
+  const PHASES = [
+    { type:'init' },
+    { type:'active_agent', idx:0 },
+    { type:'travel_edge',  edgeIdx:0 },
+    { type:'active_agent', idx:1 },
+    { type:'travel_edge',  edgeIdx:1 },
+    { type:'active_agent', idx:2 },
+    { type:'travel_edge',  edgeIdx:2 },
+    { type:'active_agent', idx:3 },
+    { type:'travel_edge',  edgeIdx:3 },
+    { type:'active_agent', idx:4 },
+    { type:'travel_edge',  edgeIdx:4 },
+    { type:'complete' },
+    { type:'reset' },
+  ];
+
+  let phaseIndex = 0;
+  let phaseStart = performance.now();
+  let settledEdges   = new Set(); // edges that have been fully traversed
+  let activeAgent    = -1;
+  let activeEdgeIdx  = -1;
+  let edgeProgress   = 0;        // 0..1
+  let initProgress   = 0;        // 0..1 (nodes fade in)
+  let completeAlpha  = 0;
+  let resetAlpha     = 1;
+  let pendingPayment = null;     // spawned on edge completion
+
+  // Payments that have appeared
+  const payments = [];
+
+  function getPhase(now) {
+    const elapsed = now - phaseStart;
+    const p = PHASES[phaseIndex];
+    const dur = PHASE_DURATION[p.type] || 2000;
+    const t = Math.min(elapsed / dur, 1);
+
+    if (t >= 1 && phaseIndex < PHASES.length - 1) {
+      const cp = PHASES[phaseIndex]; // capture before advancing
+      // Settle edge when travel_edge phase completes
+      if (cp.type === 'travel_edge') {
+        settledEdges.add(cp.edgeIdx);
+        // Spawn payment label at midpoint
+        const [a, b] = FLOW_EDGES[cp.edgeIdx];
+        // nodes not available here, defer to draw via pendingPayment
+        pendingPayment = { edgeIdx: cp.edgeIdx, born: now };
+      }
+      phaseIndex++;
+      phaseStart = now;
+      // Update active state when phase changes
+      const np = PHASES[phaseIndex];
+      if (np.type === 'active_agent') { activeAgent = np.idx; }
+      if (np.type === 'travel_edge')  { activeEdgeIdx = np.edgeIdx; edgeProgress = 0; }
+      if (np.type === 'complete')     { activeAgent = -1; activeEdgeIdx = -1; }
+      if (np.type === 'reset')        { }
+    }
+    if (t >= 1 && phaseIndex === PHASES.length - 1) {
+      // Loop: reset
+      phaseIndex = 0; phaseStart = now;
+      settledEdges.clear();
+      activeAgent = -1; activeEdgeIdx = -1; edgeProgress = 0;
+      completeAlpha = 0; payments.length = 0; pendingPayment = null;
+    }
+    return { p: PHASES[phaseIndex], t: Math.min((performance.now() - phaseStart) / (PHASE_DURATION[PHASES[phaseIndex].type] || 2000), 1) };
+  }
+
+  // Easing
+  function easeOutCubic(t) { return 1 - Math.pow(1-t, 3); }
+  function easeInOut(t)    { return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
+
+  // ── MAIN DRAW ───────────────────────────────────────────
+  let raf;
+  function draw(now) {
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0,0,W,H);
+
+    const { p, t } = getPhase(now);
+
+    // Compute node positions (pentagon, top-center first, clockwise)
+    const cx = W/2, cy = H/2 - 20;
+    const R  = W * 0.335;
+    const nodes = AGENTS.map((ag, i) => {
+      const ang = -Math.PI/2 + (i / AGENTS.length) * Math.PI * 2;
+      return { x: cx + R * Math.cos(ang), y: cy + R * Math.sin(ang), ...ag };
+    });
+
+    // ── Background grid ───────────────────────────────
+    ctx.save();
+    ctx.strokeStyle = 'rgba(34,211,238,0.04)';
+    ctx.lineWidth = 0.5;
+    const gs = 44;
+    for (let x=0; x<W; x+=gs) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+    for (let y=0; y<H; y+=gs) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+    ctx.restore();
+
+    // Init: compute global fade-in progress
+    if (p.type === 'init') {
+      initProgress = easeOutCubic(t);
+      resetAlpha   = 1;
+    } else if (p.type === 'reset') {
+      resetAlpha   = 1 - easeInOut(t);
+      initProgress = 1;
+    } else {
+      initProgress = 1;
+      resetAlpha   = 1;
+    }
+
+    const globalAlpha = initProgress * resetAlpha;
+
+    // ── Draw ALL pentagon edges (dim background) ───────
+    ctx.save();
+    ctx.globalAlpha = globalAlpha * 0.12;
+    FLOW_EDGES.forEach(([a,b]) => {
+      const na = nodes[a], nb = nodes[b];
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4,8]);
+      ctx.beginPath(); ctx.moveTo(na.x, na.y); ctx.lineTo(nb.x, nb.y); ctx.stroke();
+    });
+    ctx.restore();
+
+    // ── Draw settled edges (bright, glowing) ──────────
+    settledEdges.forEach(ei => {
+      const [a, b] = FLOW_EDGES[ei];
+      const na = nodes[a], nb = nodes[b];
+      ctx.save();
+      ctx.globalAlpha = globalAlpha * 0.85;
+      const grad = ctx.createLinearGradient(na.x, na.y, nb.x, nb.y);
+      grad.addColorStop(0, AGENTS[a].color);
+      grad.addColorStop(1, AGENTS[b].color);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+      ctx.shadowColor = AGENTS[a].color;
+      ctx.shadowBlur  = 8;
+      ctx.beginPath(); ctx.moveTo(na.x, na.y); ctx.lineTo(nb.x, nb.y); ctx.stroke();
+      ctx.restore();
+    });
+
+    // ── Flush pending payment (spawned on edge completion) ──
+    if (pendingPayment) {
+      const [a, b] = FLOW_EDGES[pendingPayment.edgeIdx];
+      const na = nodes[a], nb = nodes[b];
+      payments.push({
+        x: (na.x + nb.x)/2, y: (na.y + nb.y)/2 - 16,
+        text: EDGE_LABELS[pendingPayment.edgeIdx],
+        color: AGENTS[b].color,
+        born: pendingPayment.born,
+        lifetime: 3000,
+      });
+      pendingPayment = null;
+    }
+
+    // ── Draw active edge (animating fill) ─────────────
+    if (p.type === 'travel_edge') {
+      edgeProgress = easeInOut(t);
+      const [a, b] = FLOW_EDGES[activeEdgeIdx];
+      const na = nodes[a], nb = nodes[b];
+      const ex = na.x + (nb.x - na.x) * edgeProgress;
+      const ey = na.y + (nb.y - na.y) * edgeProgress;
+
+      // Partial line
+      ctx.save();
+      ctx.globalAlpha = globalAlpha;
+      const grad = ctx.createLinearGradient(na.x, na.y, ex, ey);
+      grad.addColorStop(0, AGENTS[a].color);
+      grad.addColorStop(1, AGENTS[b].color);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([]);
+      ctx.shadowColor = AGENTS[a].color; ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.moveTo(na.x, na.y); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.restore();
+
+      // Packet at front
+      ctx.save();
+      ctx.globalAlpha = globalAlpha;
+      ctx.fillStyle   = AGENTS[b].color;
+      ctx.shadowColor = AGENTS[b].color; ctx.shadowBlur = 20;
+      ctx.beginPath(); ctx.arc(ex, ey, 5, 0, Math.PI*2); ctx.fill();
+      // Inner bright
+      ctx.shadowBlur = 0; ctx.fillStyle = '#fff'; ctx.globalAlpha = globalAlpha*0.85;
+      ctx.beginPath(); ctx.arc(ex, ey, 2.5, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+
+      // Trailing dashes (moving)
+      ctx.save();
+      ctx.globalAlpha = globalAlpha * 0.3;
+      ctx.strokeStyle = AGENTS[a].color;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 10]);
+      ctx.lineDashOffset = -(now * 0.04);
+      ctx.beginPath(); ctx.moveTo(na.x, na.y); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.restore();
+    }
+
+    // ── Draw payment labels ────────────────────────────
+    payments.forEach((pm, i) => {
+      const age   = now - pm.born;
+      const frac  = age / pm.lifetime;
+      if (frac > 1) return;
+      const alpha = frac < 0.15 ? frac/0.15 : frac > 0.7 ? (1-frac)/0.3 : 1;
+      const dy    = -frac * 28;
+      ctx.save();
+      ctx.globalAlpha = alpha * globalAlpha;
+      ctx.font = '600 11px "Space Grotesk",sans-serif';
+      const tw = ctx.measureText(pm.text).width + 18;
+      ctx.fillStyle   = 'rgba(8,11,24,0.92)';
+      ctx.strokeStyle = pm.color + '60';
+      ctx.lineWidth   = 1;
+      ctx.beginPath(); ctx.roundRect(pm.x - tw/2, pm.y + dy - 11, tw, 22, 6);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle    = pm.color;
+      ctx.textAlign    = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(pm.text, pm.x, pm.y + dy);
+      ctx.restore();
+    });
+    // Prune old payments
+    for (let i = payments.length-1; i >= 0; i--) {
+      if (now - payments[i].born > payments[i].lifetime) payments.splice(i, 1);
+    }
+
+    // ── MISSION COMPLETE burst ─────────────────────────
+    if (p.type === 'complete') {
+      completeAlpha = easeOutCubic(Math.min(t * 4, 1));
+      const pulseT  = (Math.sin(now * 0.004) * 0.5 + 0.5);
+
+      // Central glow
+      ctx.save();
+      ctx.globalAlpha = completeAlpha * globalAlpha * (0.15 + pulseT * 0.1);
+      const radG = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 0.55);
+      radG.addColorStop(0, '#34d399'); radG.addColorStop(1, 'transparent');
+      ctx.fillStyle = radG;
+      ctx.beginPath(); ctx.arc(cx, cy, R * 0.55, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+
+      // "MISSION COMPLETE" label
+      ctx.save();
+      ctx.globalAlpha = completeAlpha * globalAlpha;
+      ctx.font = '700 16px "Space Grotesk",sans-serif';
+      const label = '✅  MISSION COMPLETE';
+      const lw    = ctx.measureText(label).width + 28;
+      ctx.fillStyle   = 'rgba(8,11,24,0.95)';
+      ctx.strokeStyle = '#34d39970';
+      ctx.lineWidth   = 1.5;
+      ctx.shadowColor = '#34d399'; ctx.shadowBlur = 24;
+      ctx.beginPath(); ctx.roundRect(cx - lw/2, cy - 16, lw, 32, 8); ctx.fill(); ctx.stroke();
+      ctx.shadowBlur  = 0;
+      ctx.fillStyle   = '#34d399';
+      ctx.textAlign   = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, cx, cy);
+      ctx.restore();
+
+      // Payment receipts beneath
+      const receipts = [
+        { text:'$1.20 USDC → NewsAgent',    color:'#a78bfa' },
+        { text:'$0.80 USDC → MarketAgent',  color:'#fbbf24' },
+        { text:'$1.40 USDC → SkepticAgent', color:'#f472b6' },
+        { text:'Trust +2 all agents ↑',     color:'#34d399' },
+      ];
+      receipts.forEach((r, ri) => {
+        const delay = ri * 0.18;
+        const ra    = Math.max(0, Math.min((t - delay) * 5, 1));
+        if (ra <= 0) return;
+        ctx.save();
+        ctx.globalAlpha = ra * globalAlpha;
+        ctx.font = '500 11px "Space Grotesk",sans-serif';
+        const rw = ctx.measureText(r.text).width + 20;
+        const ry = cy + 32 + ri * 26;
+        ctx.fillStyle   = 'rgba(8,11,24,0.88)';
+        ctx.strokeStyle = r.color + '40'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.roundRect(cx - rw/2, ry, rw, 20, 5); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = r.color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(r.text, cx, ry + 10);
+        ctx.restore();
+      });
+    }
+
+    // ── Draw nodes ────────────────────────────────────
+    nodes.forEach((nd, i) => {
+      const isActive   = activeAgent === i;
+      const isSettled  = [...settledEdges].some(ei => FLOW_EDGES[ei][1] === i) || (p.type === 'complete');
+      const wasSource  = [...settledEdges].some(ei => FLOW_EDGES[ei][0] === i);
+      const isLive     = isActive || (p.type === 'travel_edge' && (FLOW_EDGES[activeEdgeIdx][0] === i || FLOW_EDGES[activeEdgeIdx][1] === i));
+      const nodeAlpha  = globalAlpha;
+
+      // Stagger init appearance
+      const initDelay = i / AGENTS.length;
+      const nodeInit  = p.type === 'init'
+        ? Math.max(0, Math.min((t - initDelay) * (1/(1-initDelay+0.001)), 1))
+        : 1;
+
+      ctx.save();
+      ctx.globalAlpha = nodeAlpha * easeOutCubic(nodeInit);
+
+      const r  = W * 0.065;
+      const pulse = Math.sin(now * 0.002 + i * 1.2) * 0.5 + 0.5;
+
+      // Aura glow
+      if (isActive || isLive || isSettled) {
+        const aura = ctx.createRadialGradient(nd.x, nd.y, r, nd.x, nd.y, r + (isActive ? 32 : 20) + pulse * 10);
+        aura.addColorStop(0, nd.color + (isActive ? '55' : '30'));
+        aura.addColorStop(1, 'transparent');
+        ctx.fillStyle = aura;
+        ctx.beginPath(); ctx.arc(nd.x, nd.y, r + 32 + pulse*10, 0, Math.PI*2); ctx.fill();
+      }
+
+      // Spinning orbit ring (only when active)
+      if (isActive) {
+        ctx.save();
+        ctx.translate(nd.x, nd.y);
+        ctx.rotate(now * 0.0018);
+        ctx.strokeStyle = nd.color;
+        ctx.globalAlpha = 0.5 + pulse * 0.3;
+        ctx.lineWidth   = 1.5;
+        ctx.setLineDash([5, 9]);
+        ctx.beginPath(); ctx.arc(0, 0, r + 10, 0, Math.PI*2); ctx.stroke();
+        ctx.restore();
+      }
+
+      // Node body
+      ctx.fillStyle   = '#0d1020';
+      ctx.strokeStyle = isActive  ? nd.color :
+                        isSettled ? nd.color + 'cc' :
+                        wasSource ? nd.color + '88' :
+                        'rgba(255,255,255,0.1)';
+      ctx.lineWidth   = isActive ? 2 : isSettled ? 1.5 : 1;
+      ctx.shadowColor = nd.color;
+      ctx.shadowBlur  = isActive ? 20 + pulse * 14 : isSettled ? 10 : 0;
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.roundRect(nd.x - r, nd.y - r, r*2, r*2, 10); ctx.fill(); ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Emoji
+      ctx.font = `${r * 0.9}px serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(nd.emoji, nd.x, nd.y + 1);
+
+      // Settled checkmark
+      if (isSettled && p.type !== 'init' && p.type !== 'reset') {
+        ctx.fillStyle = nd.color;
+        ctx.shadowColor = nd.color; ctx.shadowBlur = 8;
+        ctx.beginPath(); ctx.arc(nd.x + r - 5, nd.y - r + 5, 7, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#000'; ctx.font = 'bold 8px monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('✓', nd.x + r - 5, nd.y - r + 5);
+      }
+
+      // Label below node
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = nodeAlpha * easeOutCubic(nodeInit) * (isActive ? 1 : 0.7);
+
+      // Name
+      ctx.font = `600 11px "Space Grotesk",sans-serif`;
+      ctx.fillStyle = isActive ? nd.color : isSettled ? nd.color + 'cc' : 'rgba(255,255,255,0.45)';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText(nd.name, nd.x, nd.y + r + 9);
+
+      // Role tag
+      ctx.font = `500 9px "JetBrains Mono",monospace`;
+      ctx.fillStyle = 'rgba(255,255,255,0.28)';
+      ctx.fillText(nd.role.toUpperCase(), nd.x, nd.y + r + 23);
+
+      // Action label (only when active)
+      if (isActive) {
+        ctx.font = `500 10px "Space Grotesk",sans-serif`;
+        const aw  = ctx.measureText(nd.action).width + 16;
+        const ay  = nd.y + r + 38;
+        ctx.globalAlpha = nodeAlpha * (0.6 + pulse * 0.4);
+        ctx.fillStyle = 'rgba(8,11,24,0.9)';
+        ctx.strokeStyle = nd.color + '50'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.roundRect(nd.x - aw/2, ay, aw, 18, 4); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = nd.color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(nd.action, nd.x, ay + 9);
+      }
+      ctx.restore();
+    });
+
+    // ── Mission label (top of canvas) ─────────────────
+    if (p.type !== 'init' && p.type !== 'reset') {
+      ctx.save();
+      ctx.globalAlpha = globalAlpha * 0.85;
+      ctx.font = '500 11px "JetBrains Mono",monospace';
+      const missionText = 'MISSION: Trump Polymarket Alpha';
+      const mw = ctx.measureText(missionText).width + 18;
+      ctx.fillStyle = 'rgba(8,11,24,0.85)';
+      ctx.strokeStyle = 'rgba(34,211,238,0.25)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(W/2 - mw/2, 16, mw, 22, 5); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(34,211,238,0.7)';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(missionText, W/2, 27);
+      ctx.restore();
+    }
+
+    raf = requestAnimationFrame(draw);
+  }
+
+  requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>

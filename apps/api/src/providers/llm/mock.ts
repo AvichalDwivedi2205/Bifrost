@@ -1,4 +1,4 @@
-import type { MissionTask, VerificationCheck } from "@missionmesh/shared";
+import type { MissionTask, VerificationCheck } from "@bifrost/shared";
 
 import type { LLMProvider, LLMRequest, LLMTextResponse } from "./types";
 
@@ -145,7 +145,7 @@ function createTradeRecommendation(): Record<string, unknown> {
     keyPoints: [
       "The strongest public catalyst lagged the earliest move.",
       "Thin liquidity makes the market easy to distort.",
-      "MissionMesh recommends preserving budget rather than forcing a trade.",
+      "Bifrost recommends preserving budget rather than forcing a trade.",
     ],
     artifactRef: "artifact://mission/final-recommendation",
   };
@@ -206,7 +206,7 @@ export class MockLLMProvider implements LLMProvider {
     const payload = buildMockPayload(request.task, request.prompt);
     return {
       provider: this.provider,
-      model: "missionmesh/mock-runtime",
+      model: "bifrost/mock-runtime",
       text: JSON.stringify(payload),
     };
   }

@@ -1,5 +1,5 @@
-import type { AgentProfile } from "@missionmesh/shared";
-import { demoRegistry } from "@missionmesh/shared";
+import type { AgentProfile } from "@bifrost/shared";
+import { demoRegistry } from "@bifrost/shared";
 
 import { TopBar } from "@/components/topbar";
 

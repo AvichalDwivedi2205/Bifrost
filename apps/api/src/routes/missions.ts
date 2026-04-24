@@ -4,7 +4,7 @@ import {
   buildSelectionAuthorizationMessage,
   buildSpendApprovalAuthorizationMessage,
   MISSION_AUTH_WINDOW_MS,
-} from "@missionmesh/shared";
+} from "@bifrost/shared";
 import { PublicKey } from "@solana/web3.js";
 import nacl from "tweetnacl";
 import { z } from "zod";
@@ -82,17 +82,13 @@ export async function registerMissionRoutes(
 ) {
   app.get("/health", async () => ({
     ok: true,
-    service: "missionmesh-api",
+    service: "bifrost-api",
     missions: store.list().length,
     runtime: runner.getRuntimeStatus(),
   }));
 
   app.get("/api/demo/dashboard", async () => ({
     missions: store.list(),
-  }));
-
-  app.get("/api/registry", async () => ({
-    agents: runner.getRegistry(),
   }));
 
   app.get("/api/missions", async () => ({

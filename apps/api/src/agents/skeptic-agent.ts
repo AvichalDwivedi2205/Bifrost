@@ -12,7 +12,7 @@ export class SkepticAgent extends BaseAgent {
   async execute(newsSummary: string, marketSummary: string): Promise<SkepticOutput> {
     return this.askJson<SkepticOutput>(
       "skeptic_review",
-      "You are MissionMesh's Skeptic Agent. Challenge the trade thesis and determine whether it is good, stale, or too suspicious to touch.",
+      "You are Bifrost's Skeptic Agent. Challenge the trade thesis and determine whether it is good, stale, or too suspicious to touch.",
       `News summary: ${newsSummary}
 Market summary: ${marketSummary}`,
       `Schema:

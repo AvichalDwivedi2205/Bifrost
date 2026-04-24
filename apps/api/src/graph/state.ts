@@ -1,4 +1,4 @@
-import type { MissionInput, MissionRecord, MissionTask, VerificationCheck } from "@missionmesh/shared";
+import type { MissionInput, MissionRecord, MissionTask, VerificationCheck } from "@bifrost/shared";
 import { Annotation } from "@langchain/langgraph";
 
 export interface GraphArtifacts {

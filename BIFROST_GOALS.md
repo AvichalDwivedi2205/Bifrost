@@ -1,10 +1,10 @@
-# MissionMesh Goals
+# Bifrost Goals
 
 ## Verdict
 
 As of **April 9, 2026**, this is a good idea only if we stop treating it as "a multi-agent demo app" and narrow it to:
 
-**MissionMesh = the contract, escrow, verification, and settlement layer for agent work on Solana.**
+**Bifrost = the contract, escrow, verification, and settlement layer for agent work on Solana.**
 
 That version is strong.
 
@@ -30,8 +30,8 @@ For **Colosseum Frontier**:
 
 For **Superteam Frontier sidetracks**, the ranking is:
 
-1. **100xDevs**: best default fit. It is open-theme, explicitly rewards real usable products, and offers **$10k** total prizes. This is the cleanest fit for MissionMesh as a serious product: [listing](https://superteam.fun/earn/listing/100xdevs-frontier-hackathon-track).
-2. **RPC Fast**: strong secondary fit. MissionMesh will need low-latency RPC, event streaming, receipts, and indexing anyway, so this is strategically aligned if we really use the infra. It offers **infrastructure credits** rather than straight cash: [listing](https://superteam.fun/earn/listing/dollar10000-in-rpc-infrastructure-credits-for-colosseum-frontier-hackathon).
+1. **100xDevs**: best default fit. It is open-theme, explicitly rewards real usable products, and offers **$10k** total prizes. This is the cleanest fit for Bifrost as a serious product: [listing](https://superteam.fun/earn/listing/100xdevs-frontier-hackathon-track).
+2. **RPC Fast**: strong secondary fit. Bifrost will need low-latency RPC, event streaming, receipts, and indexing anyway, so this is strategically aligned if we really use the infra. It offers **infrastructure credits** rather than straight cash: [listing](https://superteam.fun/earn/listing/dollar10000-in-rpc-infrastructure-credits-for-colosseum-frontier-hackathon).
 3. **Privacy Track by MagicBlock**: only pursue this if we actually add **private mission budgets, private agent-to-agent settlement, or confidential payment flows**. Otherwise it will feel bolted on: [listing](https://superteam.fun/earn/listing/privacy-track-colosseum-hackathon-powered-by-magicblock-st-my-and-sns).
 4. **Encrypt & Ika**: only pursue this if we intentionally pivot into **cross-chain agent treasury, MPC-controlled agent wallets, or confidential capital allocation**. High-upside, but not a free add-on: [listing](https://superteam.fun/earn/listing/encrypt-ika-frontier-april-2026).
 5. **Eitherway**: skip unless we actually build through Eitherway with a deep **Solflare / Kamino / DFlow / QuickNode** integration. Otherwise this is forced-fit: [listing](https://superteam.fun/earn/listing/build-a-live-dapp-with-solflare-kamino-dflow-or-quicknode-with-eitherway-app).
@@ -42,7 +42,7 @@ On regional tracks: the Frontier hub itself still looks partially placeholder-li
 
 The best strategy is:
 
-- build **MissionMesh as agent work contracts on Solana**
+- build **Bifrost as agent work contracts on Solana**
 - submit to **main Frontier**
 - also submit to **100xDevs**
 - also submit to **RPC Fast**
@@ -51,4 +51,4 @@ The best strategy is:
 
 The winning pitch is:
 
-**"MissionMesh lets people fund autonomous agents with real budgets on Solana, constrain what they can spend on, verify what they delivered, and settle payouts and reputation onchain."**
+**"Bifrost lets people fund autonomous agents with real budgets on Solana, constrain what they can spend on, verify what they delivered, and settle payouts and reputation onchain."**

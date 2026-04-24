@@ -8,8 +8,8 @@
     "plugins": [{ "name": "next" }],
     "paths": {
       "@/*": ["./*"],
-      "@missionmesh/shared": ["../../packages/shared/src/index.ts"],
-      "@missionmesh/shared/*": ["../../packages/shared/src/*"]
+      "@bifrost/shared": ["../../packages/shared/src/index.ts"],
+      "@bifrost/shared/*": ["../../packages/shared/src/*"]
     }
   },
   "include": [

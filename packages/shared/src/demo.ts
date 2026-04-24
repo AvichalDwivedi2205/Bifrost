@@ -748,7 +748,7 @@ export const demoMissionRecord: MissionRecord = {
   },
   reputationDeltas: [],
   chain: {
-    programId: "MissionMesh11111111111111111111111111111111",
+    programId: "Bifrost11111111111111111111111111111111111",
     missionPda: "mission_demo_1_pda",
     verificationPda: "verification_demo_1_pda",
     vaultAta: "vault_demo_1_ata",

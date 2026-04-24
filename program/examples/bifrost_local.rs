@@ -8,7 +8,7 @@ use std::{
 };
 
 use borsh::BorshDeserialize;
-use missionmesh_program::{
+use bifrost_program::{
     instruction::{
         ApproveSpendArgs, CreateAllocationArgs, CreateMissionArgs, ExecuteSpendArgs,
         FinalizeAllocationArgs, FundMissionArgs, InitializeProtocolArgs, MissionInstruction,
@@ -100,7 +100,7 @@ fn main() -> Result<()> {
     let config = driver_config();
     let command = env::args().nth(1).unwrap_or_default();
     if command.is_empty() {
-        return Err("usage: cargo run --example missionmesh_local -- <command> [args]".into());
+        return Err("usage: cargo run --example bifrost_local -- <command> [args]".into());
     }
 
     let harness = LocalHarness::new(&config)?;
@@ -165,14 +165,14 @@ fn driver_config() -> DriverConfig {
     let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     DriverConfig {
-        rpc_url: env::var("MISSIONMESH_RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.to_string()),
-        payer_path: env::var("MISSIONMESH_PAYER")
+        rpc_url: env::var("BIFROST_RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.to_string()),
+        payer_path: env::var("BIFROST_PAYER")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(home).join(".config/solana/id.json")),
-        program_keypair_path: env::var("MISSIONMESH_PROGRAM_KEYPAIR")
+        program_keypair_path: env::var("BIFROST_PROGRAM_KEYPAIR")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| manifest_dir.join("target/deploy/missionmesh_program-keypair.json")),
-        state_dir: manifest_dir.join(".missionmesh-local"),
+            .unwrap_or_else(|_| manifest_dir.join("target/deploy/bifrost_program-keypair.json")),
+        state_dir: manifest_dir.join(".bifrost-local"),
     }
 }
 
@@ -399,10 +399,10 @@ impl LocalHarness {
             self.agent_registry,
             self.agent.pubkey(),
             RegisterAgentArgs {
-                metadata_hash: hash(b"missionmesh-local-agent").to_bytes(),
-                capability_hash: hash(b"missionmesh-spend-runtime").to_bytes(),
+                metadata_hash: hash(b"bifrost-local-agent").to_bytes(),
+                capability_hash: hash(b"bifrost-spend-runtime").to_bytes(),
                 verifier: self.verifier.pubkey(),
-                privacy_policy_hash: hash(b"missionmesh-local-privacy").to_bytes(),
+                privacy_policy_hash: hash(b"bifrost-local-privacy").to_bytes(),
             },
         )])?;
         Ok(())
