@@ -1,0 +1,31 @@
+{
+  "name": "@missionmesh/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "bun src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test ./src/*.test.ts ./src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "latest",
+    "@fastify/websocket": "latest",
+    "@langchain/langgraph": "latest",
+    "@missionmesh/shared": "file:../../packages/shared",
+    "@solana/web3.js": "latest",
+    "dotenv": "latest",
+    "fastify": "latest",
+    "google-auth-library": "latest",
+    "nanoid": "latest",
+    "tweetnacl": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "bun-types": "latest",
+    "typescript": "latest"
+  }
+}
