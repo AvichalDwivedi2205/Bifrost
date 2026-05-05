@@ -20,6 +20,11 @@ export interface MissionSpendApprovalDecisionRequest {
   auth: MissionAuthEnvelope;
 }
 
+export interface MissionHumanCheckpointAnswerRequest {
+  response: string;
+  auth: MissionAuthEnvelope;
+}
+
 export interface RegistryApplicationCreateRequest {
   manifest: AgentManifest;
   auth: MissionAuthEnvelope;
@@ -48,6 +53,7 @@ export function buildMissionAuthorizationMessage(
     `Max Per Call: ${mission.maxPerCall}`,
     `Human Approval Above: ${mission.humanApprovalAbove}`,
     `Challenge Window Hours: ${mission.challengeWindowHours}`,
+    `Template Config: ${JSON.stringify(mission.templateConfig ?? {})}`,
   ].join("\n");
 }
 
@@ -83,6 +89,57 @@ export function buildSpendApprovalAuthorizationMessage(
     `Decision: ${approve ? "approve" : "reject"}`,
     `Issued At: ${issuedAt}`,
   ].join("\n");
+}
+
+export function buildHumanCheckpointAuthorizationMessage(
+  missionId: string,
+  authorityWallet: string,
+  checkpointId: string,
+  response: string,
+  issuedAt: string,
+): string {
+  return [
+    "Bifrost Authorization",
+    "Action: answer_human_checkpoint",
+    `Mission: ${missionId}`,
+    `Authority: ${authorityWallet}`,
+    `Checkpoint: ${checkpointId}`,
+    `Response: ${response}`,
+    `Issued At: ${issuedAt}`,
+  ].join("\n");
+}
+
+export function buildAgentMessageResolveAuthorizationMessage(
+  missionId: string,
+  messageId: string,
+  issuedAt: string,
+): string {
+  return [
+    "Bifrost Authorization",
+    "Action: resolve_agent_message",
+    `Mission: ${missionId}`,
+    `Message: ${messageId}`,
+    `Issued At: ${issuedAt}`,
+  ].join("\n");
+}
+
+export function buildPaymentApprovalMemoMessage(args: {
+  missionId: string;
+  approvalId: string;
+  amount: number;
+  service: string;
+  payoutWallet: string;
+  issuedAt: string;
+}): string {
+  return [
+    "bifrost.payment-approval.v1",
+    args.missionId,
+    args.approvalId,
+    args.amount.toFixed(6),
+    args.service,
+    args.payoutWallet,
+    args.issuedAt,
+  ].join("|");
 }
 
 export function buildRegistryApplicationAuthorizationMessage(

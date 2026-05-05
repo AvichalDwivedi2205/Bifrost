@@ -3,6 +3,7 @@ export type MissionStatus =
   | "selection_pending"
   | "created"
   | "active"
+  | "awaiting_human_input"
   | "awaiting_spend_approval"
   | "verifying"
   | "settled"
@@ -97,6 +98,20 @@ export interface MissionTask {
   status: TaskStatus;
 }
 
+export interface LaunchMissionConfig {
+  productName: string;
+  oneLineIdea: string;
+  targetAudience: string;
+  primaryCTA: string;
+  brandTone: string;
+  mustHaveSections: string[];
+  domainBudgetCap: number;
+  allowDomainPurchase: boolean;
+  launchChannels: string[];
+  referenceSites: string[];
+  assetsProvided: string[];
+}
+
 export interface MissionInput {
   title: string;
   template: string;
@@ -111,6 +126,7 @@ export interface MissionInput {
   maxPerCall: number;
   humanApprovalAbove: number;
   challengeWindowHours: number;
+  templateConfig?: Record<string, unknown>;
 }
 
 export interface AgentPhaseDefinition {
@@ -283,6 +299,7 @@ export interface RegistryAgent {
     claimsRejected: string[];
     updatedAt: string;
   };
+  trustProfile?: AgentTrustProfile;
 }
 
 export interface AgentProfile extends RegistryAgent {
@@ -325,6 +342,13 @@ export interface SpendApprovalRequest {
   rejectionReason?: string;
 }
 
+export interface PolicyCheckResult {
+  underMaxPerCall: boolean;
+  serviceAllowlisted: boolean;
+  humanApprovalRequired: boolean;
+  missionBudgetRemaining: number;
+}
+
 export interface AgentSelectionProposal {
   id: string;
   status: ApprovalStatus;
@@ -339,6 +363,36 @@ export interface VerificationCheck {
   id: string;
   label: string;
   status: "pending" | "running" | "passed" | "failed";
+  detail?: string;
+}
+
+export interface MissionVerificationReport {
+  approved: boolean;
+  score: number;
+  confidence: number;
+  passedChecks: VerificationCheck[];
+  failedChecks: VerificationCheck[];
+  missingEvidence: string[];
+  proofHash: string;
+  summary: string;
+  /** Alias for passedChecks; populated by the LLM path in execute() and used by mission-runner for verificationChecks storage. */
+  checks?: VerificationCheck[];
+  deterministicChecks?: {
+    paidCallsHaveApproval: boolean;
+    approvalsHaveSignature: boolean;
+    servicesAllowlisted: boolean;
+    noSpendExceedCap: boolean;
+    openCriticalMessagesResolved: boolean;
+    finalOutputCitesArtifacts: boolean;
+    sawChallengeBeforeSettlement: boolean;
+  };
+  messageAuditSummary?: {
+    totalMessages: number;
+    openMessages: number;
+    resolvedChallenges: number;
+    paymentRequestsApproved: number;
+    paymentRequestsRejected: number;
+  };
 }
 
 export interface MissionProof {
@@ -349,6 +403,64 @@ export interface MissionProof {
   apiReceiptHashes: string[];
   txHashes: string[];
   completionConfidence: number;
+}
+
+export interface MissionFileManifestEntry {
+  path: string;
+  hash: string;
+  bytes: number;
+  kind: "html" | "css" | "json" | "markdown" | "image" | "text";
+}
+
+export interface MissionDeliverables {
+  previewUrl?: string;
+  liveUrl?: string;
+  waitlistEndpoint?: string;
+  socialPosts?: string[];
+  fileManifest?: MissionFileManifestEntry[];
+  screenshots?: string[];
+  deployReceipt?: {
+    provider: string;
+    deploymentId: string;
+    url: string;
+    createdAt: string;
+  };
+  domainOptions?: Array<{
+    domain: string;
+    priceUsd: number;
+    available: boolean;
+  }>;
+  selectedDomain?: string;
+  formTestResult?: {
+    passed: boolean;
+    detail: string;
+    submittedAt: string;
+  };
+}
+
+export type HumanCheckpointKind =
+  | "question"
+  | "clarification"
+  | "decision"
+  | "payment_request"
+  | "ship_confirmation";
+
+export type HumanCheckpointStatus = "open" | "answered" | "cancelled";
+
+export interface HumanCheckpoint {
+  id: string;
+  missionId: string;
+  kind: HumanCheckpointKind;
+  title: string;
+  prompt: string;
+  options: string[];
+  freeformAllowed: boolean;
+  requestedByAgentId: string;
+  blockingTaskId: string;
+  status: HumanCheckpointStatus;
+  response?: string;
+  requestedAt: string;
+  respondedAt?: string;
 }
 
 export interface MissionResult {
@@ -365,6 +477,90 @@ export interface ReputationDelta {
   after: number;
   delta: number;
   rationale: string;
+  category?: string;
+  proofHash?: string;
+  txSignature?: string;
+}
+
+export interface AgentTrustProfile {
+  agentId: string;
+  globalTrustScore: number;
+  categoryScores: Record<string, number>;
+  completedMissions: number;
+  failedMissions: number;
+  disputedMissions: number;
+  verifierPassRate: number;
+  humanOverrideRate: number;
+  spendDiscipline: number;
+  latencyScore: number;
+  proofQualityScore: number;
+  lastUpdated: string;
+  latestProofHash?: string;
+  latestReputationTx?: string;
+}
+
+export type AgentWorkEvidenceKind =
+  | "thought"
+  | "tool_call"
+  | "artifact"
+  | "verification"
+  | "handoff"
+  | "onchain";
+
+export interface AgentWorkEvidence {
+  id: string;
+  missionId: string;
+  agentId: string;
+  taskId?: string;
+  phaseId?: string;
+  kind: AgentWorkEvidenceKind;
+  title: string;
+  detail: string;
+  toolName?: string;
+  inputSummary?: string;
+  outputSummary?: string;
+  artifactRefs: string[];
+  receiptRefs: string[];
+  txSignature?: string;
+  proofHash?: string;
+  confidence?: number;
+  status: "running" | "complete" | "failed";
+  startedAt: string;
+  completedAt?: string;
+}
+
+export type AgentMessageType =
+  | "question"
+  | "answer"
+  | "challenge"
+  | "evidence_request"
+  | "clarification"
+  | "decision"
+  | "payment_request";
+
+export type AgentMessageStatus = "open" | "answered" | "resolved" | "blocked";
+
+export interface AgentMessage {
+  id: string;
+  missionId: string;
+  threadId: string;
+  fromAgentId: string;
+  toAgentId: string;
+  type: AgentMessageType;
+  content: string;
+  artifactRefs: string[];
+  status: AgentMessageStatus;
+  createdAt: string;
+}
+
+export interface PaymentRequestMessage extends AgentMessage {
+  type: "payment_request";
+  amount: number;
+  service: string;
+  toolName: string;
+  payoutWallet: string;
+  justification: string;
+  policyChecks: PolicyCheckResult;
 }
 
 export interface MissionEventBase {
@@ -378,6 +574,17 @@ export type MissionEvent =
       type: "MISSION_CREATED";
       label: string;
       txSignature?: string;
+    })
+  | (MissionEventBase & {
+      type:
+        | "HUMAN_CHECKPOINT_REQUESTED"
+        | "HUMAN_CHECKPOINT_ANSWERED"
+        | "DELIVERABLE_CREATED";
+      label: string;
+      checkpointId?: string;
+      taskId?: string;
+      agentId?: string;
+      outputRef?: string;
     })
   | (MissionEventBase & {
       type: "MISSION_FAILED";
@@ -445,6 +652,17 @@ export type MissionEvent =
       label: string;
       agentId: string;
       delta: number;
+    })
+  | (MissionEventBase & {
+      type: "AGENT_MESSAGE_SENT";
+      label: string;
+      missionId: string;
+      messageId: string;
+      fromAgentId: string;
+      toAgentId: string;
+      messageType: AgentMessageType;
+      preview: string;
+      createdAt: string;
     });
 
 export interface MissionChainState {
@@ -472,9 +690,14 @@ export interface MissionRecord {
   tasks: MissionTask[];
   events: MissionEvent[];
   verificationChecks: VerificationCheck[];
+  verificationReport?: MissionVerificationReport;
   receipts: SpendReceipt[];
   proof?: MissionProof;
   finalResult?: MissionResult;
+  deliverables?: MissionDeliverables;
+  humanCheckpoints: HumanCheckpoint[];
+  agentWork: AgentWorkEvidence[];
+  trustProfiles: AgentTrustProfile[];
   failureReason?: string;
   settlement: {
     state: MissionStatus;
