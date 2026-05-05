@@ -8,6 +8,8 @@ coverage
 *.tsbuildinfo
 target
 .DS_Store
+.bifrost-workspaces/
+.playwright-mcp/
 npm-debug.log*
 pnpm-lock.yaml
 package-lock.json

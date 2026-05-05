@@ -9,12 +9,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@bifrost/shared": "file:../../packages/shared",
     "@solana/wallet-adapter-base": "latest",
     "@solana/wallet-adapter-react": "latest",
     "@solana/wallet-adapter-react-ui": "latest",
     "@solana/wallet-adapter-wallets": "latest",
-    "@bifrost/shared": "file:../../packages/shared",
     "@solana/web3.js": "latest",
+    "convex": "^1.36.1",
     "next": "latest",
     "react": "latest",
     "react-dom": "latest"

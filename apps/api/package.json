@@ -11,11 +11,12 @@
     "test": "bun test ./src/*.test.ts ./src/**/*.test.ts"
   },
   "dependencies": {
+    "@bifrost/shared": "file:../../packages/shared",
     "@fastify/cors": "latest",
     "@fastify/websocket": "latest",
     "@langchain/langgraph": "latest",
-    "@bifrost/shared": "file:../../packages/shared",
     "@solana/web3.js": "latest",
+    "convex": "^1.36.1",
     "dotenv": "latest",
     "fastify": "latest",
     "google-auth-library": "latest",
