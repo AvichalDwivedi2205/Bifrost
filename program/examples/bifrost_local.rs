@@ -116,6 +116,21 @@ fn main() -> Result<()> {
             println!("VAULT_ATA={}", addrs.mission_vault_ata);
             println!("TX=create_or_reused");
         }
+        "register-agent" => {
+            let agent_id = required_arg("--agent-id")?;
+            let capability_hash = parse_hash_arg("--capability-hash")?;
+            let metadata_hash = parse_hash_arg("--metadata-hash")?;
+            let privacy_policy_hash = parse_hash_arg("--privacy-policy-hash")?;
+            let (registry, tx) = harness.register_named_agent_if_needed(
+                &config,
+                &agent_id,
+                capability_hash,
+                metadata_hash,
+                privacy_policy_hash,
+            )?;
+            println!("AGENT_REGISTRY_PDA={registry}");
+            println!("TX={tx}");
+        }
         "prepare-mission" => {
             let mission_id = required_arg("--mission-id")?;
             let spend_budget_cap = parse_u64_arg("--spend-budget-cap")?;
@@ -283,14 +298,14 @@ impl LocalHarness {
 
     fn fund_signer_if_needed(&self, recipient: &Pubkey) -> Result<()> {
         let balance = self.rpc.get_balance(recipient).unwrap_or(0);
-        if balance >= 1_000_000_000 {
+        if balance >= 50_000_000 {
             return Ok(());
         }
         self.send_payer(
             &[system_instruction::transfer(
                 &self.payer.pubkey(),
                 recipient,
-                2_000_000_000,
+                100_000_000,
             )],
             &[],
         )?;
@@ -406,6 +421,44 @@ impl LocalHarness {
             },
         )])?;
         Ok(())
+    }
+
+    fn register_named_agent_if_needed(
+        &self,
+        config: &DriverConfig,
+        agent_id: &str,
+        capability_hash: [u8; 32],
+        metadata_hash: [u8; 32],
+        privacy_policy_hash: [u8; 32],
+    ) -> Result<(Pubkey, Signature)> {
+        let agent_dir = config.state_dir.join("agents");
+        fs::create_dir_all(&agent_dir)?;
+        let agent = load_or_create_keypair(&agent_dir.join(format!("{agent_id}.json")))?;
+        self.fund_signer_if_needed(&agent.pubkey())?;
+
+        let registry = agent_registry_pda(&self.program_id, &agent.pubkey());
+        if self.rpc.get_account(&registry).is_ok() {
+            return Ok((registry, Signature::default()));
+        }
+
+        let tx = self.send(
+            &agent,
+            &[register_agent_ix(
+                self.program_id,
+                agent.pubkey(),
+                self.config,
+                registry,
+                agent.pubkey(),
+                RegisterAgentArgs {
+                    metadata_hash,
+                    capability_hash,
+                    verifier: self.verifier.pubkey(),
+                    privacy_policy_hash,
+                },
+            )],
+            &[],
+        )?;
+        Ok((registry, tx))
     }
 
     fn create_mission_if_needed(&self, mission_id: &str, total_budget: u64) -> Result<MissionAddrs> {
@@ -790,6 +843,21 @@ fn parse_u64_arg(flag: &str) -> Result<u64> {
 
 fn optional_u64_arg(flag: &str) -> Option<u64> {
     required_arg(flag).ok()?.parse::<u64>().ok()
+}
+
+fn parse_hash_arg(flag: &str) -> Result<[u8; 32]> {
+    let value = required_arg(flag)?;
+    let trimmed = value.trim().trim_start_matches("0x");
+    if trimmed.len() != 64 {
+        return Ok(hash(value.as_bytes()).to_bytes());
+    }
+
+    let mut bytes = [0u8; 32];
+    for index in 0..32 {
+        let start = index * 2;
+        bytes[index] = u8::from_str_radix(&trimmed[start..start + 2], 16)?;
+    }
+    Ok(bytes)
 }
 
 fn short_hash(value: &str) -> String {
