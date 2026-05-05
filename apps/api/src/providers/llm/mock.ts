@@ -153,20 +153,52 @@ function createTradeRecommendation(): Record<string, unknown> {
 
 function createVerificationSummary(): {
   approved: boolean;
+  score: number;
+  confidence: number;
   proofHash: string;
   checks: VerificationCheck[];
+  passedChecks: VerificationCheck[];
+  failedChecks: VerificationCheck[];
+  missingEvidence: string[];
   summary: string;
 } {
+  const passedChecks: VerificationCheck[] = [
+    {
+      id: "objective-match",
+      label: "Output answers mission objective",
+      status: "passed",
+      detail: "Final recommendation addresses the Trump-linked market decision directly.",
+    },
+    {
+      id: "criteria-match",
+      label: "Success criteria satisfied",
+      status: "passed",
+      detail: "Verdict, rationale, confidence, and action guidance are present.",
+    },
+    {
+      id: "receipt-chain",
+      label: "Paid data backed by receipts",
+      status: "passed",
+      detail: "News, market, and replay spends have approval receipts.",
+    },
+    {
+      id: "risk-disclosure",
+      label: "Risk and uncertainty disclosed",
+      status: "passed",
+      detail: "Recommendation explains timing risk, thin liquidity, and confidence.",
+    },
+  ];
+
   return {
     approved: true,
+    score: 0.91,
+    confidence: 0.87,
     proofHash: "proof_0xa46f92f3b5c1d90f",
-    summary: "Mission satisfied the success criteria and stayed within budget limits.",
-    checks: [
-      { id: "risk", label: "Risk score computed", status: "passed" },
-      { id: "simulation", label: "Simulation triggered when score exceeded threshold", status: "passed" },
-      { id: "recommendation", label: "Recommendation generated", status: "passed" },
-      { id: "verifier", label: "Verifier approval prepared", status: "passed" },
-    ],
+    summary: "Mission satisfied the rubric, cited paid artifacts, and stayed within approved spend rails.",
+    checks: passedChecks,
+    passedChecks,
+    failedChecks: [],
+    missingEvidence: [],
   };
 }
 
@@ -189,6 +221,8 @@ function buildMockPayload(task: string, prompt: string): unknown {
     case "trade_recommendation":
       return createTradeRecommendation();
     case "verify_mission":
+      return createVerificationSummary();
+    case "verify_mission_with_audit":
       return createVerificationSummary();
     default:
       return { message: "No mock payload defined", task };

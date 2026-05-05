@@ -19,10 +19,21 @@ const rawEnvSchema = z.object({
   RPCFAST_HTTP_URL: z.string().optional(),
   RPCFAST_WS_URL: z.string().optional(),
   SOLANA_PROGRAM_ID: z.string().default("Bifrost11111111111111111111111111111111111"),
+  SOLANA_ENABLE_REAL_TXS: z
+    .string()
+    .optional()
+    .default("false")
+    .transform((value) => value === "true"),
   DEMO_MODE: z
     .string()
     .optional()
     .transform((value) => value !== "false"),
+  CONVEX_URL: z.string().url().optional(),
+  USE_CONVEX: z
+    .string()
+    .optional()
+    .default("false")
+    .transform((v) => v === "true"),
 });
 
 const rawEnv = rawEnvSchema.parse(process.env);

@@ -5,17 +5,32 @@ import Fastify from "fastify";
 import { env } from "./env";
 import { registerMissionRoutes } from "./routes/missions";
 import { registerRegistryRoutes } from "./routes/registry";
+import { AgentMessageBus } from "./services/agent-message-bus";
 import { MissionRunner } from "./services/mission-runner";
 import { AgentRegistryService } from "./services/registry";
-import { RegistryApplicationStore } from "./services/registry-application-store";
-import { MissionStore } from "./services/store";
+import {
+  ConvexRegistryApplicationStore,
+  RegistryApplicationStore,
+} from "./services/registry-application-store";
+import { ConvexMissionStore, MissionStore } from "./services/store";
 import { registerMissionStream } from "./ws/mission-stream";
 
 export async function createApp(options: { seedDemo?: boolean } = {}) {
-  const store = new MissionStore({ seedDemo: options.seedDemo });
-  const registryApplications = new RegistryApplicationStore();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const store = (
+    env.USE_CONVEX
+      ? new ConvexMissionStore()
+      : new MissionStore({ seedDemo: options.seedDemo })
+  ) as MissionStore;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const registryApplications = (
+    env.USE_CONVEX
+      ? new ConvexRegistryApplicationStore()
+      : new RegistryApplicationStore()
+  ) as RegistryApplicationStore;
   const registry = new AgentRegistryService(registryApplications);
-  const runner = new MissionRunner(store, registry);
+  const messageBus = new AgentMessageBus();
+  const runner = new MissionRunner(store, registry, messageBus);
   const app = Fastify({ logger: true });
 
   await app.register(cors, {
@@ -24,7 +39,7 @@ export async function createApp(options: { seedDemo?: boolean } = {}) {
   await app.register(websocket);
 
   await registerRegistryRoutes(app, registry, registryApplications);
-  await registerMissionRoutes(app, store, runner);
+  await registerMissionRoutes(app, store, runner, messageBus);
   await registerMissionStream(app, store);
 
   return { app, store, runner, registry, registryApplications };
