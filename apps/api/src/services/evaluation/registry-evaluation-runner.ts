@@ -157,12 +157,31 @@ function buildDeterministicResults(application: RegistryApplication): Determinis
 function buildAiResults(application: RegistryApplication) {
   const manifest = application.manifest;
   const claimIds = manifest.capabilities.map((capability) => capability.id);
+  const rubricFailures = manifest.capabilities
+    .filter((capability) => {
+      const text = `${capability.id} ${capability.label} ${capability.description}`.toLowerCase();
+      const role = manifest.role.replace("_", " ");
+      const roleAligned =
+        manifest.role === "custom" ||
+        text.includes(manifest.role) ||
+        text.includes(role) ||
+        capability.requiredTools.length > 0 ||
+        capability.allowedServices.length > 0;
+      const outputLooksSpecific =
+        capability.outputSchema.includes("{") &&
+        /summary|verdict|score|artifact|proof|risk|confidence|sources/i.test(
+          capability.outputSchema,
+        );
+      return !roleAligned || !outputLooksSpecific;
+    })
+    .map((capability) => capability.id);
   const weakClaims = manifest.capabilities
     .filter(
       (capability) =>
         capability.description.length < 24 ||
         capability.id.toLowerCase().includes("fake") ||
-        capability.id.toLowerCase().includes("unsafe"),
+        capability.id.toLowerCase().includes("unsafe") ||
+        rubricFailures.includes(capability.id),
     )
     .map((capability) => capability.id);
   const needsReview =
@@ -176,8 +195,8 @@ function buildAiResults(application: RegistryApplication) {
       score: needsReview ? 0.68 : 0.88,
       confidence: needsReview ? 0.62 : 0.82,
       summary: needsReview
-        ? "Claims need human review because at least one description is too thin or risky."
-        : "Claims are specific enough for sandbox certification.",
+        ? "Claims need human review because at least one description, schema, or role mapping is too thin or risky."
+        : "Claims are specific enough and role-aligned for sandbox certification.",
       acceptedClaims: claimIds.filter((claim) => !weakClaims.includes(claim)),
       rejectedClaims: weakClaims,
       evidenceRefs: [`artifact://${application.id}/strict-correctness`],
@@ -190,8 +209,8 @@ function buildAiResults(application: RegistryApplication) {
       confidence: weakClaims.length > 0 ? 0.64 : 0.8,
       summary:
         weakClaims.length > 0
-          ? "One or more claims looked overbroad, unsafe, or under-specified."
-          : "No obvious overclaiming found in manifest or phase plan.",
+          ? "One or more claims looked overbroad, unsafe, under-specified, or poorly matched to the declared role."
+          : "No obvious overclaiming found in manifest, schemas, or phase plan.",
       acceptedClaims: claimIds.filter((claim) => !weakClaims.includes(claim)),
       rejectedClaims: weakClaims,
       evidenceRefs: [`artifact://${application.id}/adversarial-skeptic`],

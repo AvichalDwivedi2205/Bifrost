@@ -348,6 +348,16 @@ export function createMissionGraph(deps: MissionGraphDeps) {
     const result = await deps.verifier.execute(
       state.input.successCriteria,
       state.artifacts.executionRecommendation ?? "",
+      {
+        objective: state.input.objective,
+        artifactRefs: [
+          state.artifacts.researchArtifactRef,
+          state.artifacts.riskArtifactRef,
+          state.artifacts.executionArtifactRef,
+        ].filter((item): item is string => Boolean(item)),
+        receiptCount: currentRecord.receipts.length,
+        receiptPurposes: currentRecord.receipts.map((receipt) => receipt.purpose),
+      },
     );
     const proofTx = await deps.solana.submitVerification(currentRecord, result.proofHash);
     deps.store.mutate(state.missionId, (record) => ({
@@ -366,6 +376,7 @@ export function createMissionGraph(deps: MissionGraphDeps) {
         completionConfidence: result.approved ? 94 : 32,
       },
       verificationChecks: result.checks,
+      verificationReport: result,
       tasks: updateTaskStatus(record.tasks, verifyTask.id, "complete"),
       agents: record.agents.map((agent) =>
         agent.id === verifier.id

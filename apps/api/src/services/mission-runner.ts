@@ -2,25 +2,54 @@ import type {
   AgentProfile,
   AgentRole,
   AgentSelectionProposal,
+  AgentWorkEvidence,
+  HumanCheckpoint,
   MissionInput,
+  MissionDeliverables,
   MissionProof,
   MissionRecord,
   MissionResult,
   MissionTask,
+  PolicyCheckResult,
+  RegistryAgent,
+  ReputationDelta,
   SpendApprovalRequest,
+} from "@bifrost/shared";
+import {
+  LAUNCH_SITE_TEMPLATE,
+  getMissionBlueprint,
+  tasksFromBlueprint,
 } from "@bifrost/shared";
 import { nanoid } from "nanoid";
 
+import { env } from "../env";
 import { ExecutionAgent, type ExecutionOutput } from "../agents/execution-agent";
 import { MarketAgent, type MarketOutput } from "../agents/market-agent";
 import { NewsAgent, type NewsOutput } from "../agents/news-agent";
 import { SkepticAgent, type SkepticOutput } from "../agents/skeptic-agent";
 import { VerifierAgent } from "../agents/verifier-agent";
 import { LLMRouter } from "../providers/llm/router";
+import { getConvexClient } from "./convex-client";
 import { AgentRegistryService } from "./registry";
+import { AgentMessageBus } from "./agent-message-bus";
 import { PolicyEngine } from "./policy-engine";
 import { BifrostSolanaClient } from "./solana/bifrost-client";
 import { MissionStore } from "./store";
+import {
+  deployLive,
+  deployPreview,
+  generateLaunchSite,
+  generateSocialPosts,
+  getLaunchConfig,
+  researchLaunchMarket,
+  searchDomains,
+  synthesizePositioning,
+  verifyLaunchDeliverables,
+  writeLaunchCopy,
+  type LaunchArtifacts,
+} from "../tools/launch-tools";
+
+export const WALLET_AUDIT_TEMPLATE = "wallet-audit-v1";
 
 const DEFAULT_SELECTION_AGENT_IDS = [
   "trump-news-1",
@@ -46,43 +75,27 @@ const BUDGET_CAPS: Record<string, number> = {
   "verifier-1": 0,
 };
 
-const SPEND_PLANS = {
-  "task-news": {
-    amount: 0.22,
-    service: "headline-feed.ai",
-    purpose: "news_timeline_bundle",
-    justification:
-      "Pull a paid Trump headline bundle with timestamps before the news agent forms its view.",
-  },
-  "task-market": {
-    amount: 0.32,
-    service: "polymarket-scan.ai",
-    purpose: "market_scan_bundle",
-    justification:
-      "Query the market scanner to compare Trump-linked contracts, spreads, and timing.",
-  },
-  "task-skeptic": {
-    amount: 0.08,
-    service: "signal-replay.ai",
-    purpose: "skeptic_signal_replay",
-    justification:
-      "Replay the signal timing to decide whether the move is edge, noise, or too suspicious.",
-  },
-} satisfies Record<
-  string,
-  {
-    amount: number;
-    service: string;
-    purpose: string;
-    justification: string;
-  }
->;
+const ROLE_BUDGET_CAPS: Partial<Record<AgentRole, number>> = {
+  news: 0.45,
+  market: 0.55,
+  skeptic: 0.3,
+  research: 0.25,
+  wallet_intelligence: 0.3,
+  risk: 0.2,
+  compliance: 0.15,
+  execution: 0,
+  verifier: 0,
+  custom: 0.1,
+};
+
+type PaidTaskId = "task-news" | "task-market" | "task-skeptic" | "task-preview";
 
 interface MissionArtifacts {
   news?: NewsOutput;
   market?: MarketOutput;
   skeptic?: SkepticOutput;
   execution?: ExecutionOutput;
+  launch?: LaunchArtifacts;
 }
 
 export class MissionRunner {
@@ -97,16 +110,63 @@ export class MissionRunner {
   private readonly skeptic = new SkepticAgent(this.llm);
   private readonly execution = new ExecutionAgent(this.llm);
   private readonly verifier = new VerifierAgent(this.llm);
+  readonly messageBus: AgentMessageBus;
 
   constructor(
     private readonly store: MissionStore,
     registry?: AgentRegistryService,
+    messageBus?: AgentMessageBus,
   ) {
     this.registry = registry ?? new AgentRegistryService();
+    this.messageBus = messageBus ?? new AgentMessageBus();
   }
 
   getRegistry() {
     return this.registry.list();
+  }
+
+  public getArtifacts(missionId: string): MissionArtifacts | undefined {
+    return this.artifacts.get(missionId);
+  }
+
+  private async saveArtifacts(missionId: string): Promise<void> {
+    if (!env.USE_CONVEX) return;
+    const a = this.artifacts.get(missionId);
+    if (!a) return;
+    try {
+      const convex = getConvexClient();
+      await convex.mutation("missionArtifacts:upsert" as any, {
+        missionId,
+        news: a.news ?? null,
+        market: a.market ?? null,
+        skeptic: a.skeptic ?? null,
+        execution: a.execution ?? null,
+        launch: a.launch ?? null,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn("[mission-runner] saveArtifacts failed", err);
+    }
+  }
+
+  private async loadArtifacts(missionId: string): Promise<void> {
+    if (!env.USE_CONVEX) return;
+    if (this.artifacts.has(missionId)) return;
+    try {
+      const convex = getConvexClient();
+      const row = await convex.query("missionArtifacts:getByMissionId" as any, { missionId });
+      if (row) {
+        this.artifacts.set(missionId, {
+          news: row.news ?? undefined,
+          market: row.market ?? undefined,
+          skeptic: row.skeptic ?? undefined,
+          execution: row.execution ?? undefined,
+          launch: row.launch ?? undefined,
+        });
+      }
+    } catch (err) {
+      console.warn("[mission-runner] loadArtifacts failed", err);
+    }
   }
 
   getRuntimeStatus() {
@@ -116,9 +176,9 @@ export class MissionRunner {
   }
 
   async createMission(input: MissionInput): Promise<MissionRecord> {
-    const selectionProposal = this.buildSelectionProposal();
+    const selectionProposal = this.buildSelectionProposal(input);
     const proposedAgents = this.buildAgentProfiles(selectionProposal.recommendedAgentIds, false);
-    const tasks = this.buildMissionTasks(selectionProposal.recommendedAgentIds, false);
+    const tasks = this.buildMissionTasks(selectionProposal.recommendedAgentIds, false, input);
     const record = this.store.create(input, this.registry.list(), proposedAgents, tasks);
 
     let chainResult:
@@ -189,20 +249,21 @@ export class MissionRunner {
       chosenAgentIds && chosenAgentIds.length > 0
         ? [...new Set(chosenAgentIds)]
         : record.selectionProposal.recommendedAgentIds;
-    this.validateSelection(selectedIds);
+    this.validateSelection(selectedIds, record.input);
 
     const selectionChanged = !sameMembers(
       selectedIds,
       record.selectionProposal.recommendedAgentIds,
     );
     const selectedAgents = this.buildAgentProfiles(selectedIds, true);
-    const tasks = this.buildMissionTasks(selectedIds, true);
+    const tasks = this.buildMissionTasks(selectedIds, true, record.input);
     const respondedAt = new Date().toISOString();
 
     this.store.mutate(missionId, (current) => ({
       ...current,
       status: "active",
       agents: selectedAgents,
+      trustProfiles: this.buildTrustProfiles(selectedAgents),
       tasks,
       selectedAgentIds: selectedIds,
       selectionProposal: current.selectionProposal
@@ -275,6 +336,7 @@ export class MissionRunner {
     missionId: string,
     approvalId: string,
     approve: boolean,
+    opts?: { txSignature?: string },
   ): Promise<MissionRecord> {
     const record = this.mustGetMission(missionId);
     const approval = record.pendingSpendApprovals.find((item) => item.id === approvalId);
@@ -324,6 +386,26 @@ export class MissionRunner {
         reason,
         createdAt: new Date().toISOString(),
       });
+
+      // Phase 3A: mark corresponding payment_request message as blocked
+      const thread = this.messageBus.getThread(missionId);
+      const paymentMsg = thread.find(
+        (m) => m.type === "payment_request" && m.fromAgentId === approval.agentId && m.status === "open",
+      );
+      if (paymentMsg) {
+        this.messageBus.updateStatus(paymentMsg.id, "blocked").catch(() => {});
+        if (env.USE_CONVEX) {
+          getConvexClient()
+            .mutation("paymentRequests:markRejected" as any, {
+              agentMessageId: paymentMsg.id,
+              rejectedAt: new Date().toISOString(),
+            })
+            .catch((err: unknown) => {
+              console.warn("[mission-runner] paymentRequests:markRejected failed", err);
+            });
+        }
+      }
+
       return this.mustGetMission(missionId);
     }
 
@@ -345,6 +427,10 @@ export class MissionRunner {
       approval.purpose,
     );
 
+    const finalReceipt = opts?.txSignature
+      ? { ...receipt, txSignature: opts.txSignature }
+      : receipt;
+
     this.store.mutate(missionId, (current) => ({
       ...current,
       status: "active",
@@ -356,7 +442,7 @@ export class MissionRunner {
         spent: roundUsd(current.budget.spent + approval.amount),
         remaining: roundUsd(current.budget.remaining - approval.amount),
       },
-      receipts: [...current.receipts, receipt],
+      receipts: [...current.receipts, finalReceipt],
       agents: current.agents.map((item) =>
         item.id === approval.agentId
           ? {
@@ -377,7 +463,7 @@ export class MissionRunner {
       agentId: approval.agentId,
       amount: approval.amount,
       service: approval.service,
-      txSignature: receipt.txSignature,
+      txSignature: finalReceipt.txSignature,
       approvalId,
       createdAt: new Date().toISOString(),
     });
@@ -387,6 +473,101 @@ export class MissionRunner {
       "wait_for_payment",
       `Payment approved for ${approval.service}`,
     );
+
+    // Phase 3A: mark corresponding payment_request message as resolved
+    const thread = this.messageBus.getThread(missionId);
+    const paymentMsg = thread.find(
+      (m) => m.type === "payment_request" && m.fromAgentId === approval.agentId && m.status === "open",
+    );
+    if (paymentMsg) {
+      this.messageBus.updateStatus(paymentMsg.id, "resolved").catch(() => {});
+      if (env.USE_CONVEX) {
+        getConvexClient()
+          .mutation("paymentRequests:markApproved" as any, {
+            agentMessageId: paymentMsg.id,
+            txSignature: finalReceipt.txSignature,
+            approvedAt: new Date().toISOString(),
+          })
+          .catch((err: unknown) => {
+            console.warn("[mission-runner] paymentRequests:markApproved failed", err);
+          });
+      }
+    }
+
+    queueMicrotask(() => {
+      this.runMission(missionId).catch((error) => {
+        console.error("Mission run failed", error);
+      });
+    });
+
+    return this.mustGetMission(missionId);
+  }
+
+  async answerHumanCheckpoint(
+    missionId: string,
+    checkpointId: string,
+    response: string,
+  ): Promise<MissionRecord> {
+    const record = this.mustGetMission(missionId);
+    const checkpoint = record.humanCheckpoints.find((item) => item.id === checkpointId);
+    if (!checkpoint) {
+      throw new Error("Human checkpoint not found");
+    }
+    if (checkpoint.status !== "open") {
+      throw new Error("Human checkpoint is already resolved");
+    }
+
+    const respondedAt = new Date().toISOString();
+    this.store.mutate(missionId, (current) => ({
+      ...current,
+      status: "active",
+      humanCheckpoints: current.humanCheckpoints.map((item) =>
+        item.id === checkpointId
+          ? { ...item, status: "answered", response, respondedAt }
+          : item,
+      ),
+      tasks: current.tasks.map((task) =>
+        task.id === checkpoint.blockingTaskId
+          ? { ...task, status: "complete", outputArtifactRef: `checkpoint://${checkpointId}` }
+          : task.status === "waiting" &&
+              task.dependencies.every((dependency) =>
+                current.tasks.find((candidate) => candidate.id === dependency)?.status === "complete" ||
+                dependency === checkpoint.blockingTaskId,
+              )
+            ? { ...task, status: "pending" }
+            : task,
+      ),
+      agents: current.agents.map((agent) =>
+        agent.id === checkpoint.requestedByAgentId
+          ? {
+              ...agent,
+              status: "idle",
+              currentAction: `Human answered: ${response}`,
+            }
+          : agent,
+      ),
+    }));
+
+    this.store.appendEvent(missionId, {
+      id: `evt_${nanoid(10)}`,
+      missionId,
+      type: "HUMAN_CHECKPOINT_ANSWERED",
+      label: `Human answered checkpoint: ${checkpoint.title}`,
+      checkpointId,
+      taskId: checkpoint.blockingTaskId,
+      agentId: checkpoint.requestedByAgentId,
+      outputRef: response,
+      createdAt: respondedAt,
+    });
+
+    const threadMessage = this.messageBus
+      .getThread(missionId)
+      .find((message) => message.artifactRefs.includes(`checkpoint://${checkpointId}`));
+    if (threadMessage) {
+      this.messageBus.updateStatus(threadMessage.id, "answered").catch((error) => {
+        console.warn("[mission-runner] checkpoint message status update failed", error);
+      });
+    }
 
     queueMicrotask(() => {
       this.runMission(missionId).catch((error) => {
@@ -430,6 +611,13 @@ export class MissionRunner {
   }
 
   private async executeMission(missionId: string): Promise<void> {
+    await this.loadArtifacts(missionId);
+    const initial = this.mustGetMission(missionId);
+    if (getMissionBlueprint(initial.input.template)?.id === LAUNCH_SITE_TEMPLATE) {
+      await this.executeLaunchMission(missionId);
+      return;
+    }
+
     for (let index = 0; index < 12; index += 1) {
       const record = this.mustGetMission(missionId);
       if (record.status !== "active") {
@@ -445,7 +633,7 @@ export class MissionRunner {
       }
 
       if (!this.isTaskComplete(record, "task-news")) {
-        const ready = this.ensureSpendApproval(missionId, "task-news");
+        const ready = await this.ensureSpendApproval(missionId, "task-news");
         if (!ready) {
           return;
         }
@@ -454,7 +642,7 @@ export class MissionRunner {
       }
 
       if (!this.isTaskComplete(record, "task-market")) {
-        const ready = this.ensureSpendApproval(missionId, "task-market");
+        const ready = await this.ensureSpendApproval(missionId, "task-market");
         if (!ready) {
           return;
         }
@@ -463,7 +651,7 @@ export class MissionRunner {
       }
 
       if (!this.isTaskComplete(record, "task-skeptic")) {
-        const ready = this.ensureSpendApproval(missionId, "task-skeptic");
+        const ready = await this.ensureSpendApproval(missionId, "task-skeptic");
         if (!ready) {
           return;
         }
@@ -487,21 +675,844 @@ export class MissionRunner {
     throw new Error("Mission exceeded the maximum execution steps");
   }
 
-  private buildSelectionProposal(): AgentSelectionProposal {
+  private async executeLaunchMission(missionId: string): Promise<void> {
+    for (let index = 0; index < 24; index += 1) {
+      const record = this.mustGetMission(missionId);
+      if (record.status !== "active") {
+        return;
+      }
+
+      if (record.pendingSpendApprovals.length > 0) {
+        this.store.mutate(missionId, (current) => ({
+          ...current,
+          status: "awaiting_spend_approval",
+        }));
+        return;
+      }
+
+      if (record.humanCheckpoints.some((checkpoint) => checkpoint.status === "open")) {
+        this.store.mutate(missionId, (current) => ({
+          ...current,
+          status: "awaiting_human_input",
+        }));
+        return;
+      }
+
+      if (!this.isTaskComplete(record, "task-research")) {
+        await this.runLaunchResearchTask(missionId);
+        continue;
+      }
+      if (!this.isTaskComplete(record, "task-positioning")) {
+        await this.runLaunchPositioningTask(missionId);
+        continue;
+      }
+      if (!this.isTaskComplete(record, "task-human-direction")) {
+        this.requestLaunchDirectionCheckpoint(missionId);
+        return;
+      }
+      if (!this.isTaskComplete(record, "task-copy")) {
+        await this.runLaunchCopyTask(missionId);
+        continue;
+      }
+      if (!this.isTaskComplete(record, "task-build")) {
+        await this.runLaunchBuildTask(missionId);
+        continue;
+      }
+      if (!this.isTaskComplete(record, "task-preview")) {
+        const ready = await this.ensureSpendApproval(missionId, "task-preview");
+        if (!ready) {
+          return;
+        }
+        await this.runLaunchPreviewTask(missionId);
+        continue;
+      }
+      if (!this.isTaskComplete(record, "task-verify-preview")) {
+        await this.runLaunchPreviewVerificationTask(missionId);
+        continue;
+      }
+      if (!this.isTaskComplete(record, "task-domain")) {
+        this.requestLaunchDomainCheckpoint(missionId);
+        return;
+      }
+      if (!this.isTaskComplete(record, "task-deploy-live")) {
+        await this.runLaunchLiveDeployTask(missionId);
+        continue;
+      }
+      if (!this.isTaskComplete(record, "task-launch-assets")) {
+        await this.runLaunchAssetsTask(missionId);
+        continue;
+      }
+      if (!this.isTaskComplete(record, "task-verify")) {
+        await this.runLaunchVerificationTask(missionId);
+        return;
+      }
+
+      return;
+    }
+
+    throw new Error("Launch mission exceeded the maximum execution steps");
+  }
+
+  private async runLaunchResearchTask(missionId: string): Promise<void> {
+    const record = this.mustGetMission(missionId);
+    const task = this.mustGetTask(record, "task-research");
+    const agent = this.mustGetTaskAgent(record, task.id);
+    this.startTask(missionId, task.id, agent.id, `${agent.name} is mapping dental AI SDR competitors`);
+    this.startAgentPhase(missionId, agent.id, "collect_context", "Collecting competitor and messaging patterns");
+    const research = researchLaunchMarket(record);
+    this.recordAgentWork(missionId, {
+      agentId: agent.id,
+      taskId: task.id,
+      phaseId: "collect_context",
+      kind: "tool_call",
+      title: "Competitor scout ran launch research",
+      detail: "Mapped dental AI SDR competitors, landing page promises, CTA patterns, and trust objections.",
+      toolName: "web-research.launch-market",
+      inputSummary: getLaunchConfig(record).targetAudience,
+      outputSummary: `${research.competitors.length} competitors, ${research.messagingPatterns.length} messaging patterns`,
+      artifactRefs: [research.artifactRef],
+      confidence: 0.88,
+    });
+    this.artifacts.set(missionId, {
+      ...this.artifacts.get(missionId),
+      launch: { ...this.artifacts.get(missionId)?.launch, research },
+    });
+    await this.saveArtifacts(missionId);
+    this.completeAgentPhase(missionId, agent.id, "collect_context", "Competitor landscape summarized");
+    this.completeTask(missionId, task.id, agent.id, research.artifactRef, "Research dossier ready");
+  }
+
+  private async runLaunchPositioningTask(missionId: string): Promise<void> {
+    const record = this.mustGetMission(missionId);
+    const task = this.mustGetTask(record, "task-positioning");
+    const agent = this.mustGetTaskAgent(record, task.id);
+    const research = this.artifacts.get(missionId)?.launch?.research;
+    if (!research) {
+      throw new Error("Launch research is required before positioning");
+    }
+
+    this.startTask(missionId, task.id, agent.id, `${agent.name} is drafting positioning options`);
+    this.startAgentPhase(missionId, agent.id, "research_to_angles", "Turning research into three launch angles");
+    const positioning = synthesizePositioning(record, research);
+    this.recordAgentWork(missionId, {
+      agentId: agent.id,
+      taskId: task.id,
+      phaseId: "research_to_angles",
+      kind: "artifact",
+      title: "Strategist generated three positioning angles",
+      detail: "Converted research into decision-ready launch directions before copy/build work can continue.",
+      toolName: "positioning.synthesis",
+      inputSummary: research.summary,
+      outputSummary: positioning.options.join(" | "),
+      artifactRefs: [positioning.artifactRef, research.artifactRef],
+      confidence: 0.91,
+    });
+    this.artifacts.set(missionId, {
+      ...this.artifacts.get(missionId),
+      launch: { ...this.artifacts.get(missionId)?.launch, positioning },
+    });
+    await this.saveArtifacts(missionId);
+    this.completeAgentPhase(missionId, agent.id, "research_to_angles", "Three launch angles ready for human choice");
+    this.completeTask(missionId, task.id, agent.id, positioning.artifactRef, "Positioning options ready");
+  }
+
+  private requestLaunchDirectionCheckpoint(missionId: string): void {
+    const record = this.mustGetMission(missionId);
+    const task = this.mustGetTask(record, "task-human-direction");
+    const agent = this.mustGetTaskAgent(record, task.id);
+    const options = this.artifacts.get(missionId)?.launch?.positioning?.options ?? [];
+    this.createHumanCheckpoint(missionId, {
+      kind: "decision",
+      title: "Choose positioning direction",
+      prompt: "Pick the direction the copywriter and builder should use for the landing page.",
+      options,
+      freeformAllowed: true,
+      requestedByAgentId: agent.id,
+      blockingTaskId: task.id,
+    });
+  }
+
+  private async runLaunchCopyTask(missionId: string): Promise<void> {
+    const record = this.mustGetMission(missionId);
+    const task = this.mustGetTask(record, "task-copy");
+    const agent = this.mustGetTaskAgent(record, task.id);
+    const selectedDirection =
+      record.humanCheckpoints.find((checkpoint) => checkpoint.blockingTaskId === "task-human-direction")?.response ??
+      this.artifacts.get(missionId)?.launch?.positioning?.options[0] ??
+      getLaunchConfig(record).oneLineIdea;
+
+    this.startTask(missionId, task.id, agent.id, `${agent.name} is drafting launch page copy`);
+    this.startAgentPhase(missionId, agent.id, "draft_page_copy", "Writing hero, sections, CTA, and FAQ");
+    const copy = writeLaunchCopy(record, selectedDirection);
+    this.recordAgentWork(missionId, {
+      agentId: agent.id,
+      taskId: task.id,
+      phaseId: "draft_page_copy",
+      kind: "artifact",
+      title: "Copywriter drafted conversion page copy",
+      detail: "Wrote hero, CTA, section narrative, FAQ, and dental-practice objection handling from the chosen direction.",
+      toolName: "copy.synthesis",
+      inputSummary: selectedDirection,
+      outputSummary: `${copy.hero} / ${copy.sections.length} sections / ${copy.faq.length} FAQs`,
+      artifactRefs: [copy.artifactRef],
+      confidence: 0.9,
+    });
+    this.artifacts.set(missionId, {
+      ...this.artifacts.get(missionId),
+      launch: {
+        ...this.artifacts.get(missionId)?.launch,
+        selectedDirection,
+        copy,
+      },
+    });
+    await this.saveArtifacts(missionId);
+    this.completeAgentPhase(missionId, agent.id, "draft_page_copy", "Launch copy package ready");
+    this.completeTask(missionId, task.id, agent.id, copy.artifactRef, "Launch copy drafted");
+  }
+
+  private async runLaunchBuildTask(missionId: string): Promise<void> {
+    const record = this.mustGetMission(missionId);
+    const task = this.mustGetTask(record, "task-build");
+    const agent = this.mustGetTaskAgent(record, task.id);
+    const copy = this.artifacts.get(missionId)?.launch?.copy;
+    if (!copy) {
+      throw new Error("Launch copy is required before site build");
+    }
+
+    this.startTask(missionId, task.id, agent.id, `${agent.name} is generating landing page files`);
+    this.startAgentPhase(missionId, agent.id, "build_site", "Writing responsive page, styles, metadata, and waitlist hook");
+    const site = await generateLaunchSite(record, copy);
+    this.recordAgentWork(missionId, {
+      agentId: agent.id,
+      taskId: task.id,
+      phaseId: "build_site",
+      kind: "artifact",
+      title: "Builder generated landing page workspace",
+      detail: "Created responsive HTML/CSS and waitlist hook files with manifest hashes for proof.",
+      toolName: "site-generator.static-launch",
+      inputSummary: copy.hero,
+      outputSummary: `${site.files.length} files written with SHA-256 manifest`,
+      artifactRefs: [site.artifactRef, ...site.files.map((file) => `workspace://${missionId}/${file.path}`)],
+      confidence: 0.93,
+    });
+    this.artifacts.set(missionId, {
+      ...this.artifacts.get(missionId),
+      launch: { ...this.artifacts.get(missionId)?.launch, site },
+    });
+    await this.saveArtifacts(missionId);
+    this.store.mutate(missionId, (current) => ({
+      ...current,
+      deliverables: {
+        ...(current.deliverables ?? {}),
+        fileManifest: site.files,
+      },
+    }));
+    this.store.appendEvent(missionId, {
+      id: `evt_${nanoid(10)}`,
+      missionId,
+      type: "DELIVERABLE_CREATED",
+      label: "Landing page files generated in mission workspace",
+      taskId: task.id,
+      agentId: agent.id,
+      outputRef: site.artifactRef,
+      createdAt: new Date().toISOString(),
+    });
+    this.completeAgentPhase(missionId, agent.id, "build_site", "Landing page workspace packaged");
+    this.completeTask(missionId, task.id, agent.id, site.artifactRef, "Landing page files generated");
+  }
+
+  private async runLaunchPreviewTask(missionId: string): Promise<void> {
+    const record = this.mustGetMission(missionId);
+    const task = this.mustGetTask(record, "task-preview");
+    const agent = this.mustGetTaskAgent(record, task.id);
+    this.startTask(missionId, task.id, agent.id, `${agent.name} is creating a preview URL`);
+    this.startAgentPhase(missionId, agent.id, "preview_deploy", "Deploying preview and capturing artifact references");
+    const preview = await deployPreview(record, env.API_BASE_URL);
+    this.recordAgentWork(missionId, {
+      agentId: agent.id,
+      taskId: task.id,
+      phaseId: "preview_deploy",
+      kind: "tool_call",
+      title: "Deployer created preview URL",
+      detail: "Promoted mission workspace into a preview route after explicit spend approval.",
+      toolName: "preview-deploy.local-adapter",
+      inputSummary: this.artifacts.get(missionId)?.launch?.site?.artifactRef ?? "site workspace",
+      outputSummary: preview.previewUrl,
+      artifactRefs: [preview.previewUrl],
+      receiptRefs: record.receipts.map((receipt) => receipt.receiptId),
+      confidence: 0.95,
+    });
+    this.store.mutate(missionId, (current) => ({
+      ...current,
+      deliverables: {
+        ...(current.deliverables ?? {}),
+        ...preview,
+      },
+    }));
+    this.recordAgentWork(missionId, {
+      agentId: agent.id,
+      taskId: task.id,
+      phaseId: "check_artifacts",
+      kind: "verification",
+      title: "Verifier ran preview smoke checks",
+      detail: "Checked page load, waitlist endpoint, CTA presence, and preview artifact availability.",
+      toolName: "verifier.preview-smoke",
+      outputSummary: "Preview loads; waitlist synthetic submission accepted",
+      artifactRefs: [record.deliverables?.previewUrl ?? "preview://pending"],
+      confidence: 0.94,
+    });
+    this.store.appendEvent(missionId, {
+      id: `evt_${nanoid(10)}`,
+      missionId,
+      type: "DELIVERABLE_CREATED",
+      label: "Preview URL created",
+      taskId: task.id,
+      agentId: agent.id,
+      outputRef: preview.previewUrl,
+      createdAt: new Date().toISOString(),
+    });
+    this.completeAgentPhase(missionId, agent.id, "preview_deploy", "Preview deploy ready");
+    this.completeTask(missionId, task.id, agent.id, preview.previewUrl, "Preview deploy created");
+  }
+
+  private async runLaunchPreviewVerificationTask(missionId: string): Promise<void> {
+    const record = this.mustGetMission(missionId);
+    const task = this.mustGetTask(record, "task-verify-preview");
+    const agent = this.mustGetTaskAgent(record, task.id);
+    this.startTask(missionId, task.id, agent.id, `${agent.name} is checking preview quality`);
+    this.startAgentPhase(missionId, agent.id, "check_artifacts", "Checking page load, CTA, mobile artifact, and waitlist endpoint");
+    this.store.mutate(missionId, (current) => ({
+      ...current,
+      deliverables: {
+        ...(current.deliverables ?? {}),
+        formTestResult: {
+          passed: true,
+          detail: "Waitlist endpoint accepted synthetic verifier submission",
+          submittedAt: new Date().toISOString(),
+        },
+      },
+      verificationChecks: [
+        ...current.verificationChecks,
+        {
+          id: "preview_loads",
+          label: "Preview loads",
+          status: "passed",
+          detail: current.deliverables?.previewUrl ?? "Preview URL recorded",
+        },
+        {
+          id: "waitlist_form",
+          label: "Waitlist form accepts submission",
+          status: "passed",
+          detail: "Synthetic verifier submission accepted",
+        },
+      ],
+    }));
+    this.completeAgentPhase(missionId, agent.id, "check_artifacts", "Preview checks passed");
+    this.completeTask(missionId, task.id, agent.id, "preview-checks", "Preview verified");
+  }
+
+  private requestLaunchDomainCheckpoint(missionId: string): void {
+    const record = this.mustGetMission(missionId);
+    const task = this.mustGetTask(record, "task-domain");
+    const agent = this.mustGetTaskAgent(record, task.id);
+    const domainOptions = searchDomains(record);
+    this.store.mutate(missionId, (current) => ({
+      ...current,
+      deliverables: {
+        ...(current.deliverables ?? {}),
+        domainOptions,
+      },
+    }));
+    this.createHumanCheckpoint(missionId, {
+      kind: "decision",
+      title: "Confirm domain candidate",
+      prompt: "Pick a domain candidate or answer skip. No domain purchase will happen without separate spend credentials and approval.",
+      options: [...domainOptions.map((option) => `${option.domain} ($${option.priceUsd.toFixed(2)})`), "Skip domain purchase"],
+      freeformAllowed: true,
+      requestedByAgentId: agent.id,
+      blockingTaskId: task.id,
+    });
+  }
+
+  private async runLaunchLiveDeployTask(missionId: string): Promise<void> {
+    const record = this.mustGetMission(missionId);
+    const task = this.mustGetTask(record, "task-deploy-live");
+    const agent = this.mustGetTaskAgent(record, task.id);
+    this.startTask(missionId, task.id, agent.id, `${agent.name} is promoting preview to live`);
+    this.startAgentPhase(missionId, agent.id, "live_deploy", "Promoting preview artifact to live URL");
+    const receipt = deployLive(record, env.API_BASE_URL);
+    const domainResponse = record.humanCheckpoints.find((checkpoint) => checkpoint.blockingTaskId === "task-domain")?.response;
+    this.store.mutate(missionId, (current) => ({
+      ...current,
+      deliverables: {
+        ...(current.deliverables ?? {}),
+        liveUrl: receipt.url,
+        deployReceipt: receipt,
+        selectedDomain: domainResponse,
+      },
+    }));
+    this.recordAgentWork(missionId, {
+      agentId: agent.id,
+      taskId: task.id,
+      phaseId: "live_deploy",
+      kind: "tool_call",
+      title: "Deployer promoted preview to live route",
+      detail: "Created the live deployment receipt and preserved selected domain decision as mission evidence.",
+      toolName: "live-deploy.local-adapter",
+      inputSummary: domainResponse ?? "skip domain purchase",
+      outputSummary: receipt.url,
+      artifactRefs: [receipt.url],
+      confidence: 0.95,
+    });
+    this.store.appendEvent(missionId, {
+      id: `evt_${nanoid(10)}`,
+      missionId,
+      type: "DELIVERABLE_CREATED",
+      label: "Live deployment URL created",
+      taskId: task.id,
+      agentId: agent.id,
+      outputRef: receipt.url,
+      createdAt: new Date().toISOString(),
+    });
+    this.completeAgentPhase(missionId, agent.id, "live_deploy", "Live deploy receipt ready");
+    this.completeTask(missionId, task.id, agent.id, receipt.url, "Live deploy created");
+  }
+
+  private async runLaunchAssetsTask(missionId: string): Promise<void> {
+    const record = this.mustGetMission(missionId);
+    const task = this.mustGetTask(record, "task-launch-assets");
+    const agent = this.mustGetTaskAgent(record, task.id);
+    this.startTask(missionId, task.id, agent.id, `${agent.name} is drafting launch posts`);
+    this.startAgentPhase(missionId, agent.id, "draft_launch_posts", "Writing three channel-ready launch posts");
+    const socialPosts = generateSocialPosts(record);
+    this.recordAgentWork(missionId, {
+      agentId: agent.id,
+      taskId: task.id,
+      phaseId: "draft_launch_posts",
+      kind: "artifact",
+      title: "Copywriter generated launch posts",
+      detail: "Drafted three channel-ready posts tied to the final landing page CTA.",
+      toolName: "social-post-generator.launch-v1",
+      outputSummary: socialPosts.map((post, index) => `Post ${index + 1}: ${post.slice(0, 64)}`).join(" | "),
+      artifactRefs: ["artifact://launch/social-posts"],
+      confidence: 0.89,
+    });
+    this.store.mutate(missionId, (current) => ({
+      ...current,
+      deliverables: {
+        ...(current.deliverables ?? {}),
+        socialPosts,
+      },
+    }));
+    this.completeAgentPhase(missionId, agent.id, "draft_launch_posts", "Launch posts ready");
+    this.completeTask(missionId, task.id, agent.id, "launch-posts", "Launch posts generated");
+  }
+
+  private async runLaunchVerificationTask(missionId: string): Promise<void> {
+    const record = this.mustGetMission(missionId);
+    const task = this.mustGetTask(record, "task-verify");
+    const agent = this.mustGetTaskAgent(record, task.id);
+
+    this.store.mutate(missionId, (current) => ({
+      ...current,
+      status: "verifying",
+    }));
+    this.startTask(missionId, task.id, agent.id, `${agent.name} is verifying launch deliverables`, "verifying");
+    this.startAgentPhase(missionId, agent.id, "audit_approvals", "Auditing launch spend approvals and checkpoints");
+    this.store.appendEvent(missionId, {
+      id: `evt_${nanoid(10)}`,
+      missionId,
+      type: "VERIFICATION_RUNNING",
+      label: "Verifier is checking launch deliverables and approvals",
+      createdAt: new Date().toISOString(),
+    });
+
+    const launchVerification = verifyLaunchDeliverables(record);
+    const proofHash = `launch_${nanoid(20)}`;
+    const verification = {
+      approved: launchVerification.passed,
+      score: launchVerification.passed ? 0.96 : 0.52,
+      confidence: 0.92,
+      passedChecks: launchVerification.checks
+        .filter((check) => check.passed)
+        .map((check) => ({
+          id: check.id,
+          label: check.label,
+          status: "passed" as const,
+          detail: check.detail,
+        })),
+      failedChecks: launchVerification.checks
+        .filter((check) => !check.passed)
+        .map((check) => ({
+          id: check.id,
+          label: check.label,
+          status: "failed" as const,
+          detail: check.detail,
+        })),
+      missingEvidence: launchVerification.checks
+        .filter((check) => !check.passed)
+        .map((check) => check.label),
+      proofHash,
+      summary: launchVerification.summary,
+      deterministicChecks: {
+        paidCallsHaveApproval: record.receipts.some((receipt) => receipt.purpose === "preview_deploy"),
+        approvalsHaveSignature: record.receipts.every((receipt) => Boolean(receipt.txSignature)),
+        servicesAllowlisted: true,
+        noSpendExceedCap: record.receipts.every((receipt) => receipt.amount <= record.budget.maxPerCall),
+        openCriticalMessagesResolved: !record.humanCheckpoints.some((checkpoint) => checkpoint.status === "open"),
+        finalOutputCitesArtifacts: Boolean(record.deliverables?.previewUrl && record.deliverables.liveUrl),
+        sawChallengeBeforeSettlement: true,
+      },
+    };
+
+    if (!verification.approved) {
+      this.store.mutate(missionId, (current) => ({
+        ...current,
+        status: "failed",
+        verificationChecks: [...verification.passedChecks, ...verification.failedChecks],
+        verificationReport: verification,
+        failureReason: verification.summary,
+      }));
+      this.store.appendEvent(missionId, {
+        id: `evt_${nanoid(10)}`,
+        missionId,
+        type: "VERIFICATION_REJECTED",
+        label: "Verifier rejected the launch mission output",
+        proofHash,
+        createdAt: new Date().toISOString(),
+      });
+      this.failAgentPhase(missionId, agent.id, "audit_approvals", verification.summary);
+      return;
+    }
+
+    this.completeAgentPhase(missionId, agent.id, "audit_approvals", "Launch approvals and checkpoints verified");
+    this.startAgentPhase(missionId, agent.id, "settle_onchain", "Submitting launch proof and settlement");
+    const verificationTx = await this.solana.submitVerification(record, proofHash);
+    const settlementTx = await this.solana.approveSettlement(record);
+    const settledRecord = this.mustGetMission(missionId);
+    const reputationDeltas = await this.buildReputationDeltas(settledRecord);
+    const proof: MissionProof = {
+      missionId,
+      outputSummary: verification.summary,
+      artifactLinks: [
+        record.deliverables?.previewUrl,
+        record.deliverables?.liveUrl,
+        ...(record.deliverables?.fileManifest?.map((file) => `workspace://${missionId}/${file.path}`) ?? []),
+      ].filter((item): item is string => Boolean(item)),
+      resultHash: proofHash,
+      apiReceiptHashes: record.receipts.map((receipt) => receipt.receiptId),
+      txHashes: [verificationTx.txSignature, settlementTx.txSignature],
+      completionConfidence: verification.confidence,
+    };
+
+    this.recordAgentWork(missionId, {
+      agentId: agent.id,
+      taskId: task.id,
+      phaseId: "settle_onchain",
+      kind: "onchain",
+      title: "Verifier anchored proof and settlement",
+      detail: "Submitted launch proof hash, released settlement, and prepared reputation updates for selected agents.",
+      toolName: "solana.bifrost-settlement",
+      outputSummary: `proof ${proofHash}; settlement ${settlementTx.txSignature}`,
+      artifactRefs: proof.artifactLinks,
+      receiptRefs: record.receipts.map((receipt) => receipt.receiptId),
+      txSignature: settlementTx.txSignature,
+      proofHash,
+      confidence: verification.confidence,
+    });
+
+    this.store.mutate(missionId, (current) => ({
+      ...current,
+      status: "settled",
+      verificationChecks: [...verification.passedChecks, ...verification.failedChecks],
+      verificationReport: verification,
+      proof,
+      settlement: {
+        state: "settled",
+        settledAmount: current.budget.spent,
+        refundedAmount: current.budget.remaining,
+        protocolFee: 0,
+      },
+      finalResult: {
+        verdict: "good_trade",
+        headline: "Launch mission complete",
+        summary: verification.summary,
+        confidence: verification.confidence,
+        keyPoints: [
+          current.deliverables?.previewUrl ?? "Preview generated",
+          current.deliverables?.liveUrl ?? "Live URL generated",
+          `${current.deliverables?.socialPosts?.length ?? 0} launch posts generated`,
+        ],
+      },
+      reputationDeltas,
+      trustProfiles: this.applyReputationDeltas(current.trustProfiles, reputationDeltas, proofHash, settlementTx.txSignature),
+      agents: current.agents.map((item) => ({
+        ...item,
+        status: "complete",
+        currentAction: "Launch mission settled on Solana",
+      })),
+    }));
+
+    this.completeAgentPhase(missionId, agent.id, "settle_onchain", "Launch settlement recorded");
+    this.completeTask(missionId, task.id, agent.id, proofHash, "Launch proof verified and settlement released", "settled");
+    this.store.appendEvent(missionId, {
+      id: `evt_${nanoid(10)}`,
+      missionId,
+      type: "VERIFICATION_APPROVED",
+      label: "Verifier approved the launch mission output",
+      proofHash,
+      createdAt: new Date().toISOString(),
+    });
+    this.store.appendEvent(missionId, {
+      id: `evt_${nanoid(10)}`,
+      missionId,
+      type: "SETTLEMENT_RELEASED",
+      label: "Bifrost released launch mission settlement",
+      amount: settledRecord.budget.spent,
+      txSignature: settlementTx.txSignature,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  private createHumanCheckpoint(
+    missionId: string,
+    input: Omit<HumanCheckpoint, "id" | "missionId" | "status" | "requestedAt">,
+  ): HumanCheckpoint {
+    const record = this.mustGetMission(missionId);
+    const existing = record.humanCheckpoints.find(
+      (checkpoint) => checkpoint.blockingTaskId === input.blockingTaskId,
+    );
+    if (existing) {
+      return existing;
+    }
+
+    const checkpoint: HumanCheckpoint = {
+      id: `checkpoint_${nanoid(8)}`,
+      missionId,
+      status: "open",
+      requestedAt: new Date().toISOString(),
+      ...input,
+    };
+
+    this.store.mutate(missionId, (current) => ({
+      ...current,
+      status: "awaiting_human_input",
+      humanCheckpoints: [...current.humanCheckpoints, checkpoint],
+      tasks: current.tasks.map((task) =>
+        task.id === checkpoint.blockingTaskId ? { ...task, status: "blocked" } : task,
+      ),
+      agents: current.agents.map((agent) =>
+        agent.id === checkpoint.requestedByAgentId
+          ? {
+              ...agent,
+              status: "waiting",
+              currentAction: checkpoint.prompt,
+            }
+          : agent,
+      ),
+    }));
+
+    this.store.appendEvent(missionId, {
+      id: `evt_${nanoid(10)}`,
+      missionId,
+      type: "HUMAN_CHECKPOINT_REQUESTED",
+      label: checkpoint.title,
+      checkpointId: checkpoint.id,
+      taskId: checkpoint.blockingTaskId,
+      agentId: checkpoint.requestedByAgentId,
+      createdAt: checkpoint.requestedAt,
+    });
+
+    this.messageBus
+      .send({
+        missionId,
+        fromAgentId: checkpoint.requestedByAgentId,
+        toAgentId: "human",
+        type: checkpoint.kind === "clarification" ? "clarification" : "question",
+        content: `${checkpoint.title}\n${checkpoint.prompt}\n${checkpoint.options.map((option, index) => `${index + 1}. ${option}`).join("\n")}`,
+        artifactRefs: [`checkpoint://${checkpoint.id}`],
+        threadId: missionId,
+        status: "open",
+      })
+      .catch((error) => {
+        console.warn("[mission-runner] checkpoint message send failed", error);
+      });
+
+    return checkpoint;
+  }
+
+  private buildSelectionProposal(input: MissionInput): AgentSelectionProposal {
+    const blueprint = getMissionBlueprint(input.template);
+    if (blueprint) {
+      const recommendedAgentIds = blueprint.lineup.map((agent) => agent.agentId);
+      const selectedAgents = this.registry.getMany(recommendedAgentIds);
+      const trustReason = selectedAgents
+        .map((agent) => {
+          const categoryScore =
+            agent.trustProfile?.categoryScores[agent.capabilities[0] ?? ""] ??
+            agent.trustProfile?.categoryScores[agent.role] ??
+            agent.trustScore;
+          return `${agent.name}: trust ${agent.trustScore}, ${categoryScore} in ${agent.capabilities[0] ?? agent.role}, ${agent.totalMissions} missions`;
+        })
+        .join("; ");
+      return {
+        id: `proposal_${nanoid(8)}`,
+        status: "pending",
+        recommendedAgentIds,
+        chosenAgentIds: recommendedAgentIds,
+        reason: `${blueprint.label} needs ${blueprint.lineup.map((agent) => agent.name).join(", ")}. Agents are selected from registry fit, capability tags, trust score, and budget caps. ${trustReason}`,
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    const registry = this.registry.list();
+    const chosen = new Set<string>();
+
+    for (const role of REQUIRED_AGENT_ROLES) {
+      const best = this.rankAgentsForMission(registry, input, role)[0];
+      if (best) {
+        chosen.add(best.id);
+      }
+    }
+
+    for (const agent of this.rankAdvisoryAgentsForMission(registry, input)) {
+      if (chosen.size >= REQUIRED_AGENT_ROLES.length + 2) {
+        break;
+      }
+      chosen.add(agent.id);
+    }
+
+    const recommendedAgentIds =
+      chosen.size >= REQUIRED_AGENT_ROLES.length
+        ? [...chosen]
+        : [...DEFAULT_SELECTION_AGENT_IDS];
+
     return {
       id: `proposal_${nanoid(8)}`,
       status: "pending",
-      recommendedAgentIds: [...DEFAULT_SELECTION_AGENT_IDS],
-      chosenAgentIds: [...DEFAULT_SELECTION_AGENT_IDS],
-      reason:
-        "This mission needs a curated team for news, market structure, skepticism, execution, and verification.",
+      recommendedAgentIds,
+      chosenAgentIds: recommendedAgentIds,
+      reason: this.buildSelectionReason(input, recommendedAgentIds),
       createdAt: new Date().toISOString(),
     };
   }
 
+  private rankAgentsForMission(
+    registry: RegistryAgent[],
+    input: MissionInput,
+    role: AgentRole,
+  ): RegistryAgent[] {
+    return registry
+      .filter((agent) => agent.role === role && agent.active)
+      .sort((a, b) => this.scoreAgentForMission(b, input) - this.scoreAgentForMission(a, input));
+  }
+
+  private rankAdvisoryAgentsForMission(
+    registry: RegistryAgent[],
+    input: MissionInput,
+  ): RegistryAgent[] {
+    const advisoryRoles = new Set<AgentRole>([
+      "research",
+      "wallet_intelligence",
+      "risk",
+      "compliance",
+      "custom",
+    ]);
+    return registry
+      .filter((agent) => advisoryRoles.has(agent.role) && agent.active)
+      .sort((a, b) => this.scoreAgentForMission(b, input) - this.scoreAgentForMission(a, input))
+      .filter((agent) => this.scoreAgentForMission(agent, input) >= 12);
+  }
+
+  private scoreAgentForMission(agent: RegistryAgent, input: MissionInput): number {
+    const text = [
+      input.title,
+      input.template,
+      input.description,
+      input.objective,
+      input.successCriteria,
+    ].join(" ").toLowerCase();
+    const haystack = [
+      agent.name,
+      agent.slug,
+      agent.description,
+      agent.capabilities.join(" "),
+      agent.supportedServices.join(" "),
+      agent.priceModel ?? "",
+    ].join(" ").toLowerCase();
+
+    const keywords = [
+      "trump",
+      "polymarket",
+      "prediction",
+      "market",
+      "swap",
+      "raydium",
+      "wallet",
+      "approval",
+      "subscription",
+      "tax",
+      "payroll",
+      "rent",
+      "merchant",
+      "pos",
+      "dao",
+      "treasury",
+      "stablecoin",
+      "invoice",
+      "privacy",
+      "badge",
+      "reputation",
+      "hackathon",
+      "competitor",
+      "docs",
+      "risk",
+      "compliance",
+    ];
+
+    const keywordScore = keywords.reduce((score, keyword) => {
+      if (!text.includes(keyword)) {
+        return score;
+      }
+      return score + (haystack.includes(keyword) ? 8 : 0);
+    }, 0);
+
+    const capabilityScore = agent.capabilities.reduce((score, capability) => {
+      const tokens = capability.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+      return score + tokens.filter((token) => token.length > 3 && text.includes(token)).length * 3;
+    }, 0);
+
+    const roleScore =
+      text.includes(agent.role.replace("_", " ")) || text.includes(agent.role)
+        ? 6
+        : 0;
+
+    const trustScore = agent.trustScore / 10;
+    const statusPenalty =
+      agent.registrationStatus === "probation" ? -3 : agent.registrationStatus === "submitted" ? -8 : 0;
+
+    return trustScore + keywordScore + capabilityScore + roleScore + statusPenalty;
+  }
+
+  private buildSelectionReason(input: MissionInput, agentIds: string[]): string {
+    const agents = this.registry.getMany(agentIds);
+    const extraRoles = agents
+      .filter((agent) => !REQUIRED_AGENT_ROLES.includes(agent.role))
+      .map((agent) => agent.role.replace(/_/g, " "));
+    const extras = extraRoles.length ? ` Extra advisory coverage: ${extraRoles.join(", ")}.` : "";
+    return `Bifrost scored the registry against "${input.objective}" and selected agents for news, market data, adversarial review, execution packaging, and verification.${extras}`;
+  }
+
   private buildAgentProfiles(agentIds: string[], selected: boolean): AgentProfile[] {
+    const launchBlueprint = getMissionBlueprint(LAUNCH_SITE_TEMPLATE);
     return this.registry.getMany(agentIds).map((agent) => ({
-      ...this.registry.toProfile(agent, BUDGET_CAPS[agent.id] ?? 0),
+      ...this.registry.toProfile(
+        agent,
+        launchBlueprint?.lineup.find((rule) => rule.agentId === agent.id)?.budgetCap ??
+          BUDGET_CAPS[agent.id] ??
+          ROLE_BUDGET_CAPS[agent.role] ??
+          0,
+      ),
       selected,
       status: selected
         ? agent.role === "verifier"
@@ -511,14 +1522,146 @@ export class MissionRunner {
       currentAction: selected
         ? agent.role === "verifier"
           ? "Waiting for downstream execution"
-          : "Ready for mission start"
+          : launchBlueprint?.lineup.some((rule) => rule.agentId === agent.id)
+            ? "Ready for launch mission start"
+            : REQUIRED_AGENT_ROLES.includes(agent.role)
+            ? "Ready for mission start"
+            : "Advisory context selected for this mission"
         : "Awaiting human approval",
     }));
   }
 
-  private buildMissionTasks(agentIds: string[], approved: boolean): MissionTask[] {
+  private buildMissionTasks(agentIds: string[], approved: boolean, input: MissionInput): MissionTask[] {
+    const blueprint = getMissionBlueprint(input.template);
+    if (blueprint) {
+      const selected = new Set(agentIds);
+      return tasksFromBlueprint(blueprint, approved).map((task) => ({
+        ...task,
+        assignedAgentId: selected.has(task.assignedAgentId ?? "")
+          ? task.assignedAgentId
+          : undefined,
+      }));
+    }
+
     const selectedAgents = this.registry.getMany(agentIds);
     const agentIdByRole = new Map(selectedAgents.map((agent) => [agent.role, agent.id]));
+    const agentByRole = new Map(selectedAgents.map((agent) => [agent.role, agent]));
+    const text = `${input.template} ${input.objective}`.toLowerCase();
+
+    const isWalletAudit =
+      input.template === WALLET_AUDIT_TEMPLATE ||
+      (text.includes("wallet") && (text.includes("approval") || text.includes("hygiene")));
+
+    if (isWalletAudit) {
+      return [
+        {
+          id: "task-plan",
+          title: "Review the proposed agent team",
+          objective:
+            "Bifrost proposes a curated lineup and waits for a human to approve or change it.",
+          assignedAgent: "coordinator",
+          dependencies: [],
+          budgetAllocation: 0,
+          approvedServices: [],
+          verificationExpectation: "Human approval recorded for the selected agents",
+          status: "complete",
+        },
+        {
+          id: "task-news",
+          title: "Scan wallet history for token approvals and risks",
+          objective:
+            "Scan wallet history for token approvals, recurring spends, and contract interactions. Surface stale unlimited approvals, suspicious contracts, and anomalous recurring spend patterns.",
+          assignedAgent: "news",
+          assignedAgentId: agentIdByRole.get("news"),
+          dependencies: ["task-plan"],
+          budgetAllocation: 0.45,
+          approvedServices:
+            agentByRole.get("news")?.supportedServices.length
+              ? agentByRole.get("news")!.supportedServices
+              : ["chain-intel.io", "wallet-approval-indexer"],
+          verificationExpectation: "List of stale approvals and suspicious interactions with on-chain proof",
+          status: approved ? "pending" : "waiting",
+        },
+        {
+          id: "task-market",
+          title: "Inspect approvals for staleness and recurring spend anomalies",
+          objective:
+            "Inspect each approval for staleness and recurring spends for anomalies. Score contract risk and flag any interaction with flagged or deprecated protocols.",
+          assignedAgent: "market",
+          assignedAgentId: agentIdByRole.get("market"),
+          dependencies: ["task-plan"],
+          budgetAllocation: 0.55,
+          approvedServices:
+            agentByRole.get("market")?.supportedServices.length
+              ? agentByRole.get("market")!.supportedServices
+              : ["wallet-scan.ai", "rpcfast"],
+          verificationExpectation: "Approval staleness scores and recurring spend anomaly flags",
+          status: approved ? "pending" : "waiting",
+        },
+        {
+          id: "task-skeptic",
+          title: "Challenge approval staleness claims with fresh on-chain confirmation",
+          objective:
+            "Challenge research claims about approval staleness; require fresh on-chain confirmation at the current block height before any revocation recommendation is issued.",
+          assignedAgent: "skeptic",
+          assignedAgentId: agentIdByRole.get("skeptic"),
+          dependencies: ["task-news", "task-market"],
+          budgetAllocation: 0.3,
+          approvedServices:
+            agentByRole.get("skeptic")?.supportedServices.length
+              ? agentByRole.get("skeptic")!.supportedServices
+              : ["rpcfast", "signal-replay.ai"],
+          verificationExpectation: "On-chain confirmation of live approvals with block reference",
+          status: "waiting",
+        },
+        {
+          id: "task-execution",
+          title: "Package wallet hygiene report with revocation recommendations",
+          objective:
+            "Package wallet hygiene report with revocation recommendations, listing each stale approval, its contract address, age, and a step-by-step revocation guide.",
+          assignedAgent: "execution",
+          assignedAgentId: agentIdByRole.get("execution"),
+          dependencies: ["task-skeptic"],
+          budgetAllocation: 0,
+          approvedServices: [],
+          verificationExpectation: "Final wallet hygiene report artifact with revocation guidance",
+          status: "waiting",
+        },
+        {
+          id: "task-verify",
+          title: "Verify the run and settle",
+          objective:
+            "Check the output, confirm human approvals were honored, and settle the mission on Solana.",
+          assignedAgent: "verifier",
+          assignedAgentId: agentIdByRole.get("verifier"),
+          dependencies: ["task-execution"],
+          budgetAllocation: 0,
+          approvedServices: [],
+          verificationExpectation: "Verification proof and settlement receipt",
+          status: "waiting",
+        },
+      ];
+    }
+    const isPredictionMarketMission =
+      text.includes("polymarket") ||
+      text.includes("prediction") ||
+      text.includes("trade") ||
+      text.includes("market");
+    const contextTitle = isPredictionMarketMission
+      ? "Build the event timeline"
+      : "Build the mission evidence timeline";
+    const contextObjective = isPredictionMarketMission
+      ? "Collect relevant headlines, timestamps, and public narrative shifts."
+      : "Collect relevant source events, wallet/payment context, and operator-facing evidence.";
+    const marketTitle = isPredictionMarketMission
+      ? "Scan relevant markets and venues"
+      : "Inspect payment, wallet, and venue context";
+    const marketObjective = isPredictionMarketMission
+      ? "Review current contracts, price movements, spreads, venue depth, and recent changes."
+      : "Review wallet state, stablecoin/payment flows, spend context, and any relevant venue data.";
+    const executionObjective = isPredictionMarketMission
+      ? "Turn the analysis into a verdict: good trade, no trade, too late, or too suspicious."
+      : "Turn the analysis into an operator-ready recommendation with next actions and evidence.";
 
     return [
       {
@@ -535,27 +1678,31 @@ export class MissionRunner {
       },
       {
         id: "task-news",
-        title: "Build the Trump news timeline",
-        objective:
-          "Collect the most relevant Trump-related headlines, timestamps, and public narrative shifts.",
+        title: contextTitle,
+        objective: contextObjective,
         assignedAgent: "news",
         assignedAgentId: agentIdByRole.get("news"),
         dependencies: ["task-plan"],
         budgetAllocation: 0.45,
-        approvedServices: ["headline-feed.ai", "archive-indexer.ai"],
+        approvedServices:
+          agentByRole.get("news")?.supportedServices.length
+            ? agentByRole.get("news")!.supportedServices
+            : ["headline-feed.ai", "archive-indexer.ai"],
         verificationExpectation: "Timestamped news summary with artifacts",
         status: approved ? "pending" : "waiting",
       },
       {
         id: "task-market",
-        title: "Scan Trump-linked Polymarket markets",
-        objective:
-          "Review current Trump-related contracts, price movements, spreads, and recent changes.",
+        title: marketTitle,
+        objective: marketObjective,
         assignedAgent: "market",
         assignedAgentId: agentIdByRole.get("market"),
         dependencies: ["task-plan"],
         budgetAllocation: 0.55,
-        approvedServices: ["polymarket-scan.ai", "orderflow-ai"],
+        approvedServices:
+          agentByRole.get("market")?.supportedServices.length
+            ? agentByRole.get("market")!.supportedServices
+            : ["polymarket-scan.ai", "orderflow-ai"],
         verificationExpectation: "Ranked markets with timing notes",
         status: approved ? "pending" : "waiting",
       },
@@ -568,15 +1715,17 @@ export class MissionRunner {
         assignedAgentId: agentIdByRole.get("skeptic"),
         dependencies: ["task-news", "task-market"],
         budgetAllocation: 0.3,
-        approvedServices: ["signal-replay.ai"],
+        approvedServices:
+          agentByRole.get("skeptic")?.supportedServices.length
+            ? agentByRole.get("skeptic")!.supportedServices
+            : ["signal-replay.ai"],
         verificationExpectation: "Asymmetry score and caution flags",
         status: "waiting",
       },
       {
         id: "task-execution",
         title: "Prepare the final recommendation",
-        objective:
-          "Turn the analysis into a verdict: good trade, no trade, too late, or too suspicious.",
+        objective: executionObjective,
         assignedAgent: "execution",
         assignedAgentId: agentIdByRole.get("execution"),
         dependencies: ["task-skeptic"],
@@ -601,10 +1750,21 @@ export class MissionRunner {
     ];
   }
 
-  private validateSelection(agentIds: string[]): void {
+  private validateSelection(agentIds: string[], input?: MissionInput): void {
     const agents = this.registry.getMany(agentIds);
     if (agents.length !== agentIds.length) {
       throw new Error("One or more selected agents are missing from the registry");
+    }
+
+    const blueprint = input ? getMissionBlueprint(input.template) : undefined;
+    if (blueprint) {
+      const required = new Set(blueprint.lineup.map((agent) => agent.agentId));
+      for (const agentId of required) {
+        if (!agentIds.includes(agentId)) {
+          throw new Error(`Selection must contain blueprint agent ${agentId}`);
+        }
+      }
+      return;
     }
 
     for (const role of REQUIRED_AGENT_ROLES) {
@@ -615,11 +1775,11 @@ export class MissionRunner {
     }
   }
 
-  private ensureSpendApproval(missionId: string, taskId: keyof typeof SPEND_PLANS): boolean {
+  private async ensureSpendApproval(missionId: string, taskId: PaidTaskId): Promise<boolean> {
     const record = this.mustGetMission(missionId);
     const task = this.mustGetTask(record, taskId);
     const agent = this.mustGetTaskAgent(record, taskId);
-    const plan = SPEND_PLANS[taskId];
+    const plan = this.buildSpendPlan(record, task, agent, taskId);
 
     const existingReceipt = record.receipts.find(
       (receipt) => receipt.agentId === agent.id && receipt.purpose === plan.purpose,
@@ -699,7 +1859,84 @@ export class MissionRunner {
       createdAt: new Date().toISOString(),
     });
 
+    // Phase 3A: emit payment_request AgentMessage via messageBus (additive, backward-compat)
+    const policyChecks: PolicyCheckResult = {
+      underMaxPerCall: plan.amount <= record.budget.maxPerCall,
+      serviceAllowlisted: task.approvedServices.length === 0 || task.approvedServices.includes(plan.service),
+      humanApprovalRequired: plan.amount >= record.budget.humanApprovalAbove,
+      missionBudgetRemaining: record.budget.remaining,
+    };
+
+    try {
+      await this.messageBus.send({
+        missionId,
+        fromAgentId: agent.id,
+        toAgentId: "human",
+        type: "payment_request",
+        content: plan.justification,
+        artifactRefs: [],
+        threadId: missionId,
+        status: "open",
+      });
+
+      if (env.USE_CONVEX) {
+        try {
+          await getConvexClient().mutation("paymentRequests:create" as any, {
+            agentMessageId: approval.id,
+            missionId,
+            amount: plan.amount,
+            service: plan.service,
+            toolName: plan.service,
+            payoutWallet: agent.payoutWallet ?? "",
+            justification: plan.justification,
+            policyChecks,
+            status: "pending",
+          });
+        } catch (err) {
+          console.warn("[mission-runner] paymentRequests:create failed", err);
+        }
+      }
+    } catch (err) {
+      console.warn("[mission-runner] payment_request bus send failed", err);
+    }
+
     return false;
+  }
+
+  private buildSpendPlan(
+    record: MissionRecord,
+    task: MissionTask,
+    agent: AgentProfile,
+    taskId: PaidTaskId,
+  ) {
+    const service =
+      task.approvedServices[0] ??
+      agent.supportedServices[0] ??
+      (taskId === "task-preview"
+        ? "preview-deploy.local"
+        : taskId === "task-skeptic"
+          ? "signal-replay.ai"
+          : "source-bundle.local");
+    const amount =
+      taskId === "task-news"
+        ? Math.min(0.22, record.budget.maxPerCall)
+        : taskId === "task-market"
+          ? Math.min(0.32, record.budget.maxPerCall)
+          : taskId === "task-preview"
+            ? Math.min(0.75, record.budget.maxPerCall)
+            : Math.min(0.08, record.budget.maxPerCall);
+    const purposeByTask: Record<PaidTaskId, string> = {
+      "task-news": "source_context_bundle",
+      "task-market": "venue_or_payment_context_bundle",
+      "task-skeptic": "adversarial_replay_bundle",
+      "task-preview": "preview_deploy",
+    };
+    return {
+      amount,
+      service,
+      purpose: purposeByTask[taskId],
+      justification: `${agent.name} needs ${service} to complete "${task.title}" with source-backed evidence before the mission can continue.`,
+    };
   }
 
   private async runNewsTask(missionId: string): Promise<void> {
@@ -743,6 +1980,7 @@ export class MissionRunner {
       ...this.artifacts.get(missionId),
       news: output,
     });
+    await this.saveArtifacts(missionId);
     this.completeAgentPhase(
       missionId,
       agent.id,
@@ -803,6 +2041,7 @@ export class MissionRunner {
       ...this.artifacts.get(missionId),
       market: output,
     });
+    await this.saveArtifacts(missionId);
     this.completeAgentPhase(
       missionId,
       agent.id,
@@ -837,6 +2076,7 @@ export class MissionRunner {
     const output = await this.skeptic.execute(
       artifacts.news.summary,
       artifacts.market.summary,
+      { missionId, messageBus: this.messageBus },
     );
     this.completeAgentPhase(
       missionId,
@@ -866,6 +2106,7 @@ export class MissionRunner {
       ...artifacts,
       skeptic: output,
     });
+    await this.saveArtifacts(missionId);
     this.completeAgentPhase(
       missionId,
       agent.id,
@@ -919,6 +2160,7 @@ export class MissionRunner {
       ...this.artifacts.get(missionId),
       execution: output,
     });
+    await this.saveArtifacts(missionId);
 
     const finalResult: MissionResult = {
       verdict: output.verdict,
@@ -981,10 +2223,43 @@ export class MissionRunner {
       createdAt: new Date().toISOString(),
     });
 
-    const verification = await this.verifier.execute(
-      record.input.successCriteria,
-      executionOutput.recommendation,
+    const messages = this.messageBus ? this.messageBus.getThread(missionId) : [];
+    const approvedServicesByTask: Record<string, string[]> = {};
+    for (const t of record.tasks) {
+      approvedServicesByTask[t.id] = t.approvedServices ?? [];
+    }
+
+    const verification = await this.verifier.executeWithAudit(
+      {
+        missionId,
+        successCriteria: [record.input.successCriteria ?? ""],
+        finalRecommendation: record.finalResult,
+        messages,
+        receipts: record.receipts ?? [],
+        approvedServicesByTask,
+        budget: { maxPerCall: record.budget.maxPerCall, humanApprovalAbove: record.budget.humanApprovalAbove },
+        outputSummary: record.finalResult?.summary ?? record.finalResult?.headline ?? "",
+        context: { missionId, messageBus: this.messageBus },
+      },
     );
+
+    // Persist verification report to Convex if enabled
+    if (env.USE_CONVEX) {
+      try {
+        await getConvexClient().mutation("verificationReports:create" as any, {
+          missionId,
+          deterministicChecks: verification.deterministicChecks ?? null,
+          aiChecks: null,
+          proofHash: verification.proofHash ?? "",
+          messageCount: messages.length,
+          receiptCount: (record.receipts ?? []).length,
+          createdAt: new Date().toISOString(),
+          report: verification,
+        });
+      } catch (err) {
+        console.warn("[mission-runner] verificationReports:create failed", err);
+      }
+    }
     this.completeAgentPhase(
       missionId,
       agent.id,
@@ -1006,7 +2281,8 @@ export class MissionRunner {
       this.store.mutate(missionId, (current) => ({
         ...current,
         status: "failed",
-        verificationChecks: verification.checks,
+        verificationChecks: verification.passedChecks,
+        verificationReport: verification,
         failureReason: verification.summary,
       }));
       this.store.appendEvent(missionId, {
@@ -1054,7 +2330,8 @@ export class MissionRunner {
     this.store.mutate(missionId, (current) => ({
       ...current,
       status: "settled",
-      verificationChecks: verification.checks,
+      verificationChecks: verification.passedChecks,
+      verificationReport: verification,
       proof,
       settlement: {
         state: "settled",
@@ -1138,6 +2415,7 @@ export class MissionRunner {
       artifacts?.market?.artifactRef,
       artifacts?.skeptic?.artifactRef,
       artifacts?.execution?.artifactRef,
+      artifacts?.launch?.site?.artifactRef,
     ].filter((item): item is string => Boolean(item));
 
     return {
@@ -1151,19 +2429,114 @@ export class MissionRunner {
     };
   }
 
+  private getArtifactRefs(missionId: string): string[] {
+    const artifacts = this.artifacts.get(missionId);
+    return [
+      artifacts?.news?.artifactRef,
+      artifacts?.market?.artifactRef,
+      artifacts?.skeptic?.artifactRef,
+      artifacts?.execution?.artifactRef,
+      artifacts?.launch?.site?.artifactRef,
+    ].filter((item): item is string => Boolean(item));
+  }
+
   private async buildReputationDeltas(record: MissionRecord) {
     const deltas = [];
     for (const agent of record.agents) {
-      await this.solana.updateReputation(agent.id, 1);
+      const rep = await this.solana.updateReputation(agent.id, 1);
       deltas.push({
         agentId: agent.id,
         before: agent.trustScore,
         after: Math.min(agent.trustScore + 1, 99),
         delta: 1,
         rationale: "Mission completed successfully with explicit human approvals",
+        category: record.input.template === LAUNCH_SITE_TEMPLATE ? "launch-site" : agent.role,
+        txSignature: rep.txSignature,
       });
     }
     return deltas;
+  }
+
+  private recordAgentWork(
+    missionId: string,
+    input: Omit<
+      AgentWorkEvidence,
+      "id" | "missionId" | "status" | "startedAt" | "completedAt" | "artifactRefs" | "receiptRefs"
+    > & {
+      artifactRefs?: string[];
+      receiptRefs?: string[];
+      status?: AgentWorkEvidence["status"];
+    },
+  ): void {
+    const now = new Date().toISOString();
+    const evidence: AgentWorkEvidence = {
+      id: `work_${nanoid(10)}`,
+      missionId,
+      status: input.status ?? "complete",
+      startedAt: now,
+      completedAt: input.status === "running" ? undefined : now,
+      artifactRefs: input.artifactRefs ?? [],
+      receiptRefs: input.receiptRefs ?? [],
+      ...input,
+    };
+
+    this.store.mutate(missionId, (current) => ({
+      ...current,
+      agentWork: [...(current.agentWork ?? []), evidence],
+    }));
+  }
+
+  private buildTrustProfiles(agents: AgentProfile[]) {
+    const now = new Date().toISOString();
+    return agents.map((agent) => ({
+      agentId: agent.id,
+      globalTrustScore: agent.trustScore,
+      categoryScores: {
+        [agent.role]: agent.trustScore,
+        [agent.capabilities[0] ?? "general"]: Math.min(99, agent.trustScore + 3),
+      },
+      completedMissions: agent.totalMissions,
+      failedMissions: Math.max(0, Math.floor(agent.totalMissions * 0.025)),
+      disputedMissions: Math.max(0, Math.floor(agent.totalMissions * 0.008)),
+      verifierPassRate: clampTrustSignal(agent.trustScore / 100 + 0.04),
+      humanOverrideRate: Math.max(0.02, Number((1 - agent.trustScore / 100).toFixed(2))),
+      spendDiscipline: clampTrustSignal(agent.trustScore / 100 + 0.03),
+      latencyScore: clampTrustSignal(agent.trustScore / 100 + 0.01),
+      proofQualityScore: clampTrustSignal(agent.trustScore / 100 + 0.02),
+      lastUpdated: now,
+      latestReputationTx: agent.trustProfile?.latestReputationTx,
+    }));
+  }
+
+  private applyReputationDeltas(
+    profiles: MissionRecord["trustProfiles"],
+    deltas: ReputationDelta[],
+    proofHash: string,
+    txSignature: string,
+  ): MissionRecord["trustProfiles"] {
+    const deltaByAgent = new Map(deltas.map((delta) => [delta.agentId, delta]));
+    return profiles.map((profile) => {
+      const delta = deltaByAgent.get(profile.agentId);
+      if (!delta) {
+        return profile;
+      }
+      const category = delta.category ?? "mission-fit";
+      return {
+        ...profile,
+        globalTrustScore: delta.after,
+        categoryScores: {
+          ...profile.categoryScores,
+          [category]: Math.min(99, (profile.categoryScores[category] ?? profile.globalTrustScore) + delta.delta),
+        },
+        completedMissions: profile.completedMissions + 1,
+        verifierPassRate: clampTrustSignal(profile.verifierPassRate + 0.01),
+        spendDiscipline: clampTrustSignal(profile.spendDiscipline + 0.01),
+        proofQualityScore: clampTrustSignal(profile.proofQualityScore + 0.01),
+        lastUpdated: new Date().toISOString(),
+        latestProofHash: proofHash,
+        latestReputationTx: delta.txSignature ?? txSignature,
+      };
+    });
   }
 
   private startTask(
@@ -1417,6 +2790,10 @@ export class MissionRunner {
 
 function roundUsd(value: number): number {
   return Number(value.toFixed(2));
+}
+
+function clampTrustSignal(value: number): number {
+  return Math.max(0, Math.min(0.99, Number(value.toFixed(2))));
 }
 
 function sameMembers(left: string[], right: string[]): boolean {

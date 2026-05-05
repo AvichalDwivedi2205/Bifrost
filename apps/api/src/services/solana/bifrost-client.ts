@@ -25,6 +25,7 @@ interface MissionCreateResult {
 export class BifrostSolanaClient {
   private readonly localMode =
     env.SOLANA_RPC_URL.includes("127.0.0.1") || env.SOLANA_RPC_URL.includes("localhost");
+  private readonly realTxMode = this.localMode || env.SOLANA_ENABLE_REAL_TXS;
 
   describeConnection(): MissionChainState {
     return {
@@ -37,7 +38,7 @@ export class BifrostSolanaClient {
   }
 
   async createMission(record: MissionRecord): Promise<MissionCreateResult> {
-    if (!this.localMode) {
+    if (!this.realTxMode) {
       return {
         vaultAta: `vault_${record.id}`,
         txSignature: `tx_${nanoid(10)}`,
@@ -61,7 +62,7 @@ export class BifrostSolanaClient {
   }
 
   async prepareMission(record: MissionRecord): Promise<{ txSignature: string }> {
-    if (!this.localMode) {
+    if (!this.realTxMode) {
       return { txSignature: `prepare_${record.id}_${nanoid(8)}` };
     }
 
@@ -92,7 +93,7 @@ export class BifrostSolanaClient {
     amount: number,
     purpose: string,
   ): Promise<SpendReceipt> {
-    if (!this.localMode) {
+    if (!this.realTxMode) {
       return {
         receiptId: `receipt_${nanoid(8)}`,
         missionId: record.id,
@@ -133,7 +134,7 @@ export class BifrostSolanaClient {
     record: MissionRecord,
     proofHash: string,
   ): Promise<{ txSignature: string }> {
-    if (!this.localMode) {
+    if (!this.realTxMode) {
       return { txSignature: `verify_${record.id}_${proofHash.slice(-6)}` };
     }
 
@@ -150,7 +151,7 @@ export class BifrostSolanaClient {
   }
 
   async approveSettlement(record: MissionRecord): Promise<{ txSignature: string }> {
-    if (!this.localMode) {
+    if (!this.realTxMode) {
       return { txSignature: `settle_${record.id}_${nanoid(6)}` };
     }
 
@@ -161,7 +162,7 @@ export class BifrostSolanaClient {
   }
 
   async updateReputation(agentId: string, delta: number): Promise<{ txSignature: string }> {
-    if (!this.localMode) {
+    if (!this.realTxMode) {
       return { txSignature: `rep_${agentId}_${delta}_${nanoid(4)}` };
     }
 
@@ -176,16 +177,28 @@ export class BifrostSolanaClient {
       privacyPolicyHash: string;
     },
   ): Promise<{ txSignature: string; agentRegistryPda?: string }> {
-    if (!this.localMode) {
+    if (!this.realTxMode) {
       return {
         agentRegistryPda: `agent_registry_${manifest.agentId}`,
         txSignature: `agent_reg_${manifest.agentId}_${hashes.capabilityHash.slice(0, 8)}`,
       };
     }
 
+    const result = await this.runLocalCommand([
+      "register-agent",
+      "--agent-id",
+      manifest.agentId,
+      "--capability-hash",
+      hashes.capabilityHash,
+      "--metadata-hash",
+      hashes.metadataHash,
+      "--privacy-policy-hash",
+      hashes.privacyPolicyHash,
+    ]);
+
     return {
-      agentRegistryPda: `agent_registry_local_${manifest.agentId}`,
-      txSignature: `agent_reg_local_${hashes.metadataHash.slice(0, 8)}`,
+      agentRegistryPda: result.AGENT_REGISTRY_PDA ?? `agent_registry_${manifest.agentId}`,
+      txSignature: result.TX ?? `agent_reg_${hashes.metadataHash.slice(0, 8)}`,
     };
   }
 
