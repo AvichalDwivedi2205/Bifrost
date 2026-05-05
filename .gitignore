@@ -11,6 +11,7 @@ target
 .bifrost-workspaces/
 .playwright-mcp/
 .claude/settings.local.json
+.claude/
 npm-debug.log*
 pnpm-lock.yaml
 package-lock.json
