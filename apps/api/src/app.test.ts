@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildMissionAuthorizationMessage,
+  buildHumanCheckpointAuthorizationMessage,
   buildRegistryApplicationAuthorizationMessage,
   buildSelectionAuthorizationMessage,
   buildSpendApprovalAuthorizationMessage,
@@ -92,6 +93,33 @@ function createSpendApprovalPayload(
   };
 }
 
+function createCheckpointAnswerPayload(
+  signer: Keypair,
+  missionId: string,
+  authorityWallet: string,
+  checkpointId: string,
+  response: string,
+) {
+  const issuedAt = new Date().toISOString();
+  const message = buildHumanCheckpointAuthorizationMessage(
+    missionId,
+    authorityWallet,
+    checkpointId,
+    response,
+    issuedAt,
+  );
+
+  return {
+    response,
+    auth: {
+      issuedAt,
+      signature: Buffer.from(
+        nacl.sign.detached(new TextEncoder().encode(message), signer.secretKey),
+      ).toString("base64"),
+    },
+  };
+}
+
 function createSignedRegistryApplicationPayload(
   overrides: Partial<AgentManifest> = {},
 ) {
@@ -116,7 +144,8 @@ function createSignedRegistryApplicationPayload(
         description: "Completes source-backed research with structured evidence.",
         version: "1.0.0",
         inputSchema: '{ "type": "object" }',
-        outputSchema: '{ "type": "object" }',
+        outputSchema:
+          '{ "type": "object", "properties": { "summary": { "type": "string" }, "evidenceRefs": { "type": "array" }, "confidence": { "type": "number" } } }',
         requiredTools: ["bifrost-runtime"],
         allowedServices: ["mock-sandbox"],
         evaluationSuiteId: "generic-capability-v1",
@@ -178,6 +207,29 @@ async function fetchMission(app: Awaited<ReturnType<typeof createApp>>["app"], m
       finalResult?: { verdict: string };
       budget: { spent: number; remaining: number };
       proof?: { resultHash: string; txHashes: string[] };
+      agentWork: Array<{
+        kind: string;
+        title: string;
+        artifactRefs: string[];
+      }>;
+      trustProfiles: Array<{
+        agentId: string;
+        globalTrustScore: number;
+        latestProofHash?: string;
+      }>;
+      reputationDeltas: Array<{ agentId: string; before: number; after: number; txSignature?: string }>;
+      humanCheckpoints: Array<{
+        id: string;
+        status: string;
+        options: string[];
+      }>;
+      deliverables?: {
+        previewUrl?: string;
+        liveUrl?: string;
+        waitlistEndpoint?: string;
+        socialPosts?: string[];
+        fileManifest?: unknown[];
+      };
     };
   };
 }
@@ -352,6 +404,141 @@ describe("Bifrost API", () => {
       }
 
       throw new Error("Mission did not settle before the deadline");
+    } finally {
+      await app.close();
+    }
+  }, localAwareTestTimeoutMs);
+
+  test("runs launch mission with checkpoints, preview, live URL, posts, proof, and settlement", async () => {
+    const { app } = await createApp({ seedDemo: false });
+
+    try {
+      const signedPayload = createSignedMissionPayload({
+        title: "Launch Mission v1",
+        template: "launch-site-v1",
+        description:
+          "Launch a landing page for my AI SDR tool for dentists. Budget $120. Buy a domain if it is under $15. Ask me before any spend.",
+        objective:
+          "Create a live landing page, waitlist form, launch posts, proof, and settlement for a dental AI SDR.",
+        successCriteria:
+          "Preview, live URL, waitlist endpoint, three launch posts, human checkpoints, spend approval, proof, and settlement all exist.",
+        maxBudget: 120,
+        maxPerCall: 1.5,
+        templateConfig: {
+          productName: "RecallReady AI",
+          oneLineIdea:
+            "An AI SDR that helps dentists convert missed calls and stale leads into booked appointments.",
+          targetAudience: "independent dental practices",
+          primaryCTA: "Join the waitlist",
+          brandTone: "confident, clinical, helpful",
+          mustHaveSections: ["hero", "problem", "workflow", "benefits", "faq", "waitlist"],
+          domainBudgetCap: 15,
+          allowDomainPurchase: true,
+          launchChannels: ["LinkedIn", "X", "Founder community"],
+          referenceSites: [],
+          assetsProvided: [],
+        },
+      });
+      const createResponse = await app.inject({
+        method: "POST",
+        url: "/api/missions",
+        payload: {
+          mission: signedPayload.mission,
+          auth: signedPayload.auth,
+        },
+      });
+
+      expect(createResponse.statusCode).toBe(201);
+      const created = createResponse.json() as {
+        mission: {
+          id: string;
+          selectionProposal?: { recommendedAgentIds: string[] };
+        };
+      };
+      const missionId = created.mission.id;
+
+      const selectionResponse = await app.inject({
+        method: "POST",
+        url: `/api/missions/${missionId}/selection`,
+        payload: createSelectionApprovalPayload(
+          signedPayload.signer,
+          missionId,
+          signedPayload.mission.authorityWallet,
+          created.mission.selectionProposal?.recommendedAgentIds ?? [],
+        ),
+      });
+      expect(selectionResponse.statusCode).toBe(200);
+
+      const deadline = Date.now() + localAwareTestTimeoutMs;
+      while (Date.now() < deadline) {
+        const current = await fetchMission(app, missionId);
+        if (current.mission.status === "settled") {
+          expect(current.mission.receipts.length).toBe(1);
+          expect(current.mission.deliverables?.previewUrl).toInclude(`/api/missions/${missionId}/preview`);
+          expect(current.mission.deliverables?.liveUrl).toInclude(`/api/missions/${missionId}/live`);
+          expect(current.mission.deliverables?.waitlistEndpoint).toInclude(`/api/missions/${missionId}/waitlist`);
+          expect(current.mission.deliverables?.socialPosts?.length).toBe(3);
+          expect(current.mission.deliverables?.fileManifest?.length).toBeGreaterThan(0);
+          expect(current.mission.humanCheckpoints.filter((checkpoint) => checkpoint.status === "answered").length).toBeGreaterThanOrEqual(2);
+          expect(current.mission.proof?.resultHash).toStartWith("launch_");
+          expect(current.mission.agentWork.length).toBeGreaterThanOrEqual(7);
+          expect(current.mission.agentWork.some((work) => work.kind === "tool_call")).toBe(true);
+          expect(current.mission.agentWork.some((work) => work.kind === "onchain")).toBe(true);
+          expect(current.mission.reputationDeltas.length).toBeGreaterThan(0);
+          expect(current.mission.trustProfiles.some((profile) => profile.latestProofHash?.startsWith("launch_"))).toBe(true);
+
+          const previewResponse = await app.inject({
+            method: "GET",
+            url: `/api/missions/${missionId}/preview`,
+          });
+          expect(previewResponse.statusCode).toBe(200);
+          expect(previewResponse.body).toContain("RecallReady AI");
+          return;
+        }
+
+        const pendingCheckpoint = current.mission.humanCheckpoints.find(
+          (checkpoint) => checkpoint.status === "open",
+        );
+        if (pendingCheckpoint) {
+          const response =
+            pendingCheckpoint.options[0] ??
+            "Skip domain purchase";
+          const checkpointResponse = await app.inject({
+            method: "POST",
+            url: `/api/missions/${missionId}/checkpoints/${pendingCheckpoint.id}`,
+            payload: createCheckpointAnswerPayload(
+              signedPayload.signer,
+              missionId,
+              signedPayload.mission.authorityWallet,
+              pendingCheckpoint.id,
+              response,
+            ),
+          });
+          expect(checkpointResponse.statusCode).toBe(200);
+          continue;
+        }
+
+        const pending = current.mission.pendingSpendApprovals[0];
+        if (pending) {
+          const approvalResponse = await app.inject({
+            method: "POST",
+            url: `/api/missions/${missionId}/spend-approvals/${pending.id}`,
+            payload: createSpendApprovalPayload(
+              signedPayload.signer,
+              missionId,
+              signedPayload.mission.authorityWallet,
+              pending.id,
+              true,
+            ),
+          });
+          expect(approvalResponse.statusCode).toBe(200);
+          continue;
+        }
+
+        await Bun.sleep(30);
+      }
+
+      throw new Error("Launch mission did not settle before the deadline");
     } finally {
       await app.close();
     }
