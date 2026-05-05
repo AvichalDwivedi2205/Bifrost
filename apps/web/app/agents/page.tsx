@@ -1,298 +1,438 @@
-"use client";
+'use client';
+import type { RegistryAgent } from '@bifrost/shared';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Shell } from '@/components/ui/shell';
+import { Card, Btn, Pill } from '@/components/ui/primitives';
+import { AgentIcon } from '@/components/ui/agent-icons';
+import { Icon } from '@/components/ui/icons';
+import { fetchRegistry } from '@/lib/api';
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { buildRegistryApplicationAuthorizationMessage } from "@bifrost/shared";
-import type { AgentManifest, RegistryAgent, RegistryApplication } from "@bifrost/shared";
-import { useWallet } from "@solana/wallet-adapter-react";
+const DOMAINS = [
+  'news',
+  'market',
+  'skeptic',
+  'execution',
+  'verifier',
+  'research',
+  'wallet_intelligence',
+  'risk',
+  'compliance',
+  'custom',
+  'coordinator',
+];
+const STATUSES = ['active', 'probation', 'submitted', 'unavailable', 'verifier'];
+const SORT_OPTIONS = [
+  { value: 'trust_desc', label: 'Trust (high → low)' },
+  { value: 'name_asc', label: 'Name (A → Z)' },
+  { value: 'missions_desc', label: 'Most missions' },
+  { value: 'recent', label: 'Recently certified' },
+];
 
-import { TopBar } from "@/components/topbar";
-import {
-  createRegistryApplication,
-  fetchRegistry,
-  fetchRegistryApplications,
-  runRegistryEvaluation,
-  runRegistryProtocolCheck,
-} from "@/lib/api";
+const ROLE_COLORS: Record<string, string> = {
+  coordinator: 'oklch(0.78 0.16 180)',
+  news: 'oklch(0.78 0.14 75)',
+  market: 'oklch(0.76 0.16 245)',
+  skeptic: 'oklch(0.70 0.18 295)',
+  research: 'oklch(0.72 0.13 250)',
+  wallet_intelligence: 'oklch(0.70 0.13 210)',
+  risk: 'oklch(0.65 0.20 25)',
+  compliance: 'oklch(0.72 0.12 145)',
+  execution: 'oklch(0.80 0.14 195)',
+  verifier: 'oklch(0.72 0.14 155)',
+  custom: 'oklch(0.76 0.13 320)',
+};
 
-const defaultSchema = '{ "type": "object", "properties": { "task": { "type": "string" } } }';
-const defaultOutputSchema =
-  '{ "type": "object", "properties": { "summary": { "type": "string" }, "evidence": { "type": "array" } } }';
+function agentStatus(agent: RegistryAgent) {
+  if (!agent.active) return agent.registrationStatus ?? 'unavailable';
+  return agent.registrationStatus ?? 'active';
+}
+
+function statusTone(status: string) {
+  if (status === 'active' || status === 'certified') return 'ok';
+  if (status === 'rejected' || status === 'suspended' || status === 'unavailable') return 'danger';
+  if (status === 'probation' || status === 'submitted' || status === 'protocol_check' || status === 'sandbox_eval') return 'warn';
+  return 'default';
+}
 
 export default function RegistryPage() {
-  const wallet = useWallet();
+  const router = useRouter();
+  const [q, setQ] = useState('');
+  const [selectedDomains, setSelectedDomains] = useState<Set<string>>(new Set());
+  const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set());
+  const [sortBy, setSortBy] = useState('trust_desc');
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [agents, setAgents] = useState<RegistryAgent[]>([]);
-  const [applications, setApplications] = useState<RegistryApplication[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [search, setSearch] = useState("");
-  const [agentName, setAgentName] = useState("General Research Agent");
-  const [capability, setCapability] = useState("source-backed-research");
-  const [endpointUrl, setEndpointUrl] = useState("mock://general-research-agent");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState("");
-
-  async function refreshRegistry() {
-    const [nextAgents, nextApplications] = await Promise.all([
-      fetchRegistry(),
-      fetchRegistryApplications(),
-    ]);
-    setAgents(nextAgents);
-    setApplications(nextApplications);
-  }
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    refreshRegistry().catch((refreshError) => {
-      setError(refreshError instanceof Error ? refreshError.message : "Failed to load registry");
-    });
+    let cancelled = false;
+    fetchRegistry()
+      .then((items) => {
+        if (!cancelled) setAgents(items);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Registry unavailable');
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const filteredAgents = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) {
-      return agents;
-    }
-    return agents.filter((agent) =>
-      [agent.name, agent.description, agent.role, ...agent.capabilities]
-        .join(" ")
-        .toLowerCase()
-        .includes(query),
-    );
-  }, [agents, search]);
+  const toggleDomain = (d: string) => {
+    setSelectedDomains(prev => {
+      const next = new Set(prev);
+      if (next.has(d)) next.delete(d); else next.add(d);
+      return next;
+    });
+  };
 
-  async function handleRegisterAndEvaluate() {
-    setError("");
-    if (!wallet.publicKey || !wallet.signMessage) {
-      setError("Connect a wallet with message signing to register an agent.");
-      return;
-    }
+  const toggleStatus = (s: string) => {
+    setSelectedStatuses(prev => {
+      const next = new Set(prev);
+      if (next.has(s)) next.delete(s); else next.add(s);
+      return next;
+    });
+  };
 
-    setIsSubmitting(true);
-    try {
-      const ownerWallet = wallet.publicKey.toBase58();
-      const slug = slugify(agentName);
-      const capabilityId = slugify(capability);
-      const now = new Date().toISOString();
-      const manifest: AgentManifest = {
-        agentId: `${slug}-${Date.now()}`,
-        slug,
-        name: agentName,
-        description:
-          "Agent registered through Bifrost with capability-level sandbox evaluation.",
-        icon: "AI",
-        ownerWallet,
-        payoutWallet: ownerWallet,
-        verifierWallet: ownerWallet,
-        endpointUrl,
-        role: "custom",
-        executionMode: "callback",
-        capabilities: [
-          {
-            id: capabilityId,
-            label: capability,
-            description:
-              "Completes bounded tasks with structured outputs, evidence references, and budget discipline.",
-            version: "1.0.0",
-            inputSchema: defaultSchema,
-            outputSchema: defaultOutputSchema,
-            requiredTools: ["bifrost-runtime"],
-            allowedServices: ["mock-sandbox"],
-            evaluationSuiteId: "generic-capability-v1",
-          },
-        ],
-        phaseSchema: [
-          {
-            id: "plan",
-            label: "Plan",
-            description: "Read the task and decide a bounded execution path.",
-            streams: true,
-          },
-          {
-            id: "produce",
-            label: "Produce",
-            description: "Return the structured result and evidence references.",
-            streams: true,
-          },
-        ],
-        supportedServices: ["mock-sandbox"],
-        spendPolicy: {
-          maxPerCall: 0.1,
-          budgetCap: 0.5,
-          requiresHumanAbove: 0,
-        },
-        priceModel: "Sandbox mock pricing",
-        metadataUri: `mock://${slug}/metadata.json`,
-        privacyPolicyUri: `mock://${slug}/privacy.json`,
-        requestedEvaluationSuites: ["generic-capability-v1"],
-        signedAt: now,
-      };
-      const issuedAt = new Date().toISOString();
-      const signatureBytes = await wallet.signMessage(
-        new TextEncoder().encode(
-          buildRegistryApplicationAuthorizationMessage(manifest, issuedAt),
-        ),
-      );
-      const signature = bytesToBase64(signatureBytes);
+  const filtered = useMemo(() => {
+    let list = agents.filter((agent) => {
+      const currentStatus = agentStatus(agent);
+      const haystack = [
+        agent.name,
+        agent.description,
+        agent.capabilities.join(' '),
+        agent.supportedServices.join(' '),
+        agent.slug,
+      ].join(' ').toLowerCase();
 
-      const application = await createRegistryApplication(manifest, {
-        issuedAt,
-        signature,
-      });
-      const checked = await runRegistryProtocolCheck(application.id);
-      const evaluated = checked.status === "rejected"
-        ? { application: checked }
-        : await runRegistryEvaluation(checked.id);
-      setApplications((current) => [
-        evaluated.application,
-        ...current.filter((item) => item.id !== evaluated.application.id),
-      ]);
-      await refreshRegistry();
-      setShowForm(false);
-    } catch (submitError) {
-      setError(
-        submitError instanceof Error ? submitError.message : "Unable to register agent",
-      );
-    } finally {
-      setIsSubmitting(false);
+      const domainMatch = selectedDomains.size === 0 || selectedDomains.has(agent.role);
+      const statusMatch =
+        selectedStatuses.size === 0 ||
+        selectedStatuses.has(currentStatus) ||
+        (selectedStatuses.has('verifier') && agent.verifierCompatible);
+
+      return domainMatch && statusMatch && (!q || haystack.includes(q.toLowerCase()));
+    });
+
+    if (sortBy === 'trust_desc') {
+      list = [...list].sort((a, b) => b.trustScore - a.trustScore);
+    } else if (sortBy === 'name_asc') {
+      list = [...list].sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sortBy === 'missions_desc') {
+      list = [...list].sort((a, b) => b.totalMissions - a.totalMissions);
     }
-  }
+    // 'recent' — leave in API order
+
+    return list;
+  }, [agents, selectedDomains, selectedStatuses, sortBy, q]);
+
+  const activeCount = agents.filter((agent) => agentStatus(agent) === 'active').length;
+
+  const hasActiveFilters = selectedDomains.size > 0 || selectedStatuses.size > 0 || sortBy !== 'trust_desc';
 
   return (
-    <div className="page-shell">
-      <TopBar
-        title="Agent Registry"
-        actions={
-          <button className="btn bp" onClick={() => setShowForm((value) => !value)}>
-            {showForm ? "Close" : "+ Register Agent"}
-          </button>
-        }
-      />
-      <div className="page-pad">
-        {showForm ? (
-          <div className="reg-panel">
-            <div>
-              <div className="rn">Register Capability-Certified Agent</div>
-              <div className="rd">
-                Submit a signed manifest, run mocked protocol checks, then sandbox certify the
-                declared capability.
-              </div>
-            </div>
-            <div className="reg-grid">
-              <label className="reg-field">
-                Agent name
-                <input value={agentName} onChange={(event) => setAgentName(event.target.value)} />
-              </label>
-              <label className="reg-field">
-                Capability
-                <input
-                  value={capability}
-                  onChange={(event) => setCapability(event.target.value)}
-                />
-              </label>
-              <label className="reg-field wide">
-                Runtime endpoint
-                <input
-                  value={endpointUrl}
-                  onChange={(event) => setEndpointUrl(event.target.value)}
-                />
-              </label>
-            </div>
-            <button className="btn bp" disabled={isSubmitting} onClick={handleRegisterAndEvaluate}>
-              {isSubmitting ? "Evaluating..." : "Sign, Register, Evaluate"}
-            </button>
-          </div>
-        ) : null}
-
-        {error ? <div className="reg-error">{error}</div> : null}
-
-        <div className="sr">
+    <Shell
+      title="Agent Registry"
+      subtitle={`${agents.length} agents · ${activeCount} active · ${agents.filter(a => a.verifierCompatible).length} verifier-compatible`}
+      actions={
+        <Btn variant="primary" size="sm" icon="plus" onClick={() => router.push('/agents/apply')}>
+          Register agent
+        </Btn>
+      }
+    >
+      {/* Search row */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10 }}>
+        <div style={{
+          flex: 1, display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 12px', borderRadius: 10,
+          background: 'var(--surface)', border: '1px solid var(--hairline)',
+        }}>
+          <Icon name="search" size={14} style={{ color: 'var(--text-dim)', flexShrink: 0 }} />
           <input
-            className="si"
-            placeholder="Search by capability, domain, or name..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="Search by capability, domain, or name…"
+            style={{
+              flex: 1, background: 'transparent', border: 'none', outline: 'none',
+              color: 'var(--text)', fontSize: 13, fontFamily: 'inherit',
+            }}
           />
-          <div className="fi">All Domains</div>
-          <div className="fi">Trust: High</div>
-          <div className="fi">Available</div>
+          {q && (
+            <button
+              onClick={() => setQ('')}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer', padding: 2,
+                color: 'var(--text-dim)', display: 'flex', alignItems: 'center',
+              }}
+            >
+              <Icon name="x" size={13} />
+            </button>
+          )}
         </div>
+        <Btn
+          variant={drawerOpen ? 'default' : 'ghost'}
+          size="sm"
+          icon="filter"
+          onClick={() => setDrawerOpen(v => !v)}
+          style={{
+            border: drawerOpen ? '1px solid var(--accent)' : undefined,
+            color: drawerOpen ? 'var(--accent)' : undefined,
+            background: drawerOpen ? 'var(--accent-soft)' : undefined,
+          }}
+        >
+          Filters{hasActiveFilters ? ` · ${selectedDomains.size + selectedStatuses.size + (sortBy !== 'trust_desc' ? 1 : 0)}` : ''}
+        </Btn>
+      </div>
 
-        {applications.length > 0 ? (
-          <div className="eval-strip">
-            {applications.slice(0, 3).map((application) => (
-              <div className="eval-card" key={application.id}>
-                <div className="tmc">{application.status}</div>
-                <div className="rn">{application.manifest.name}</div>
-                <div className="rd">
-                  {application.certifiedCapabilities.length} certified,{" "}
-                  {application.rejectedClaims.length} rejected
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : null}
+      {/* Active filter chips */}
+      {(selectedDomains.size > 0 || selectedStatuses.size > 0 || sortBy !== 'trust_desc') && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+          {[...selectedDomains].map(d => (
+            <button
+              key={`domain-${d}`}
+              onClick={() => toggleDomain(d)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
+                background: 'var(--accent-soft)', color: 'var(--accent)',
+                border: '1px solid color-mix(in oklch, var(--accent) 30%, transparent)',
+                fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+              }}
+            >
+              Domain: {d.replace(/_/g, ' ')}
+              <Icon name="x" size={11} />
+            </button>
+          ))}
+          {[...selectedStatuses].map(s => (
+            <button
+              key={`status-${s}`}
+              onClick={() => toggleStatus(s)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
+                background: 'var(--accent-soft)', color: 'var(--accent)',
+                border: '1px solid color-mix(in oklch, var(--accent) 30%, transparent)',
+                fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+              }}
+            >
+              Status: {s}
+              <Icon name="x" size={11} />
+            </button>
+          ))}
+          {sortBy !== 'trust_desc' && (
+            <button
+              onClick={() => setSortBy('trust_desc')}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
+                background: 'var(--accent-soft)', color: 'var(--accent)',
+                border: '1px solid color-mix(in oklch, var(--accent) 30%, transparent)',
+                fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+              }}
+            >
+              Sort: {SORT_OPTIONS.find(o => o.value === sortBy)?.label}
+              <Icon name="x" size={11} />
+            </button>
+          )}
+          <button
+            onClick={() => { setSelectedDomains(new Set()); setSelectedStatuses(new Set()); setSortBy('trust_desc'); }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
+              background: 'transparent', color: 'var(--text-dim)',
+              border: '1px solid var(--hairline)',
+              fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+            }}
+          >
+            Clear all
+          </button>
+        </div>
+      )}
 
-        <div className="rg">
-          {filteredAgents.map((agent) => (
-            <Link className="rc" href="/profile" key={agent.id}>
-              <div className="ri">{agent.icon}</div>
-              <div className="rn">{agent.name}</div>
-              <div className="rd">{agent.description}</div>
-              <div className="cw">
-                {agent.capabilities.map((agentCapability) => (
-                  <span key={agentCapability} className="cap">
-                    {agentCapability}
+      {/* Filter drawer */}
+      <div style={{
+        overflow: 'hidden',
+        maxHeight: drawerOpen ? 500 : 0,
+        transition: 'max-height 0.28s var(--ease)',
+        marginBottom: drawerOpen ? 10 : 0,
+      }}>
+        <Card pad={20} style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
+          {/* Domain group */}
+          <div style={{ flex: '1 1 220px' }}>
+            <div style={{
+              fontSize: 11, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase',
+              color: 'var(--text-dim)', marginBottom: 12,
+            }}>
+              Domain
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {DOMAINS.map(d => (
+                <label key={d} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedDomains.has(d)}
+                    onChange={() => toggleDomain(d)}
+                    style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer' }}
+                  />
+                  <span style={{
+                    fontSize: 13, color: selectedDomains.has(d) ? 'var(--text)' : 'var(--text-muted)',
+                    textTransform: 'capitalize',
+                  }}>
+                    {d.replace(/_/g, ' ')}
                   </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div style={{ width: 1, background: 'var(--hairline)', alignSelf: 'stretch' }} />
+
+          {/* Status group */}
+          <div style={{ flex: '1 1 160px' }}>
+            <div style={{
+              fontSize: 11, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase',
+              color: 'var(--text-dim)', marginBottom: 12,
+            }}>
+              Status
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {STATUSES.map(s => (
+                <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedStatuses.has(s)}
+                    onChange={() => toggleStatus(s)}
+                    style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer' }}
+                  />
+                  <span style={{
+                    fontSize: 13, color: selectedStatuses.has(s) ? 'var(--text)' : 'var(--text-muted)',
+                    textTransform: 'capitalize',
+                  }}>
+                    {s}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div style={{ width: 1, background: 'var(--hairline)', alignSelf: 'stretch' }} />
+
+          {/* Sort group */}
+          <div style={{ flex: '1 1 200px' }}>
+            <div style={{
+              fontSize: 11, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase',
+              color: 'var(--text-dim)', marginBottom: 12,
+            }}>
+              Sort
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {SORT_OPTIONS.map(opt => (
+                <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="sort"
+                    value={opt.value}
+                    checked={sortBy === opt.value}
+                    onChange={() => setSortBy(opt.value)}
+                    style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer' }}
+                  />
+                  <span style={{
+                    fontSize: 13, color: sortBy === opt.value ? 'var(--text)' : 'var(--text-muted)',
+                  }}>
+                    {opt.label}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {error ? <Card pad={14} style={{ marginBottom: 14, color: 'var(--danger)' }}>{error}</Card> : null}
+
+      {/* Results summary */}
+      {(selectedDomains.size > 0 || selectedStatuses.size > 0 || q) && (
+        <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 10 }}>
+          {filtered.length} result{filtered.length !== 1 ? 's' : ''} matching current filters
+        </div>
+      )}
+
+      {/* Agent grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
+        {filtered.map(a => {
+          const color = ROLE_COLORS[a.role] ?? 'oklch(0.76 0.13 320)';
+          const currentStatus = agentStatus(a);
+          const onchainActive = Boolean(a.evaluationSummary?.latestReportId || a.trustProfile?.latestReputationTx);
+          const topCategory = Object.entries(a.trustProfile?.categoryScores ?? {}).sort((left, right) => right[1] - left[1])[0];
+          return (
+            <Card key={a.id} onClick={() => router.push(`/agents/${a.id}`)} style={{ cursor: 'pointer', minHeight: 265 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: 11, flexShrink: 0,
+                  background: color.replace(')', ' / 0.14)'), color,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: `1px solid ${color.replace(')', ' / 0.3)')}`,
+                }}>
+                  <AgentIcon role={a.role} size={24} color={color} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, letterSpacing: '-0.015em' }}>{a.name}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-dim)', textTransform: 'capitalize', marginTop: 2 }}>
+                    {a.role} · <span className="mono">{a.wallet}</span>
+                  </div>
+                </div>
+                <Pill tone={statusTone(currentStatus)}>{currentStatus}</Pill>
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+                <Pill tone={onchainActive ? 'ok' : 'default'} dot={onchainActive}>
+                  {onchainActive ? 'onchain anchored' : 'offchain profile'}
+                </Pill>
+                {topCategory && (
+                  <Pill tone="accent" dot={false}>
+                    {topCategory[0]} · {topCategory[1]}
+                  </Pill>
+                )}
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.5, minHeight: 54 }}>{a.description}</div>
+              <div style={{ display: 'flex', gap: 4, marginTop: 12, flexWrap: 'wrap' }}>
+                {a.capabilities.slice(0, 4).map(t => (
+                  <span key={t} style={{
+                    padding: '2px 8px', borderRadius: 6,
+                    background: 'var(--surface-2)', fontSize: 10.5, color: 'var(--text-muted)',
+                    border: '1px solid var(--hairline)', fontFamily: 'var(--font-mono)',
+                  }}>{t}</span>
                 ))}
               </div>
-              {agent.certifiedCapabilities?.length ? (
-                <div className="cw">
-                  {agent.certifiedCapabilities.map((certified) => (
-                    <span key={certified.capabilityId} className="cap ok">
-                      {certified.status}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <div className="cw">
-                  {agent.phaseSchema.map((phase) => (
-                    <span key={phase.id} className="cap">
-                      {phase.label}
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="tr2">
+              <div style={{
+                display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 14,
+                paddingTop: 12, borderTop: '1px solid var(--hairline)',
+              }}>
                 <div>
-                  <div className="tsc">{agent.trustScore}</div>
-                  <div className="tmc">Trust Score</div>
+                  <div style={{ fontSize: 10.5, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Trust</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                    <span style={{ fontSize: 15, fontWeight: 500 }}>{a.trustScore}</span>
+                    <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'var(--surface-2)' }}>
+                      <div style={{ width: `${a.trustScore}%`, height: '100%', background: color, borderRadius: 2 }} />
+                    </div>
+                  </div>
                 </div>
-                <div className="tmc">
-                  {agent.evaluationSummary
-                    ? `${agent.evaluationSummary.claimsVerified.length} claims verified`
-                    : `${agent.totalMissions} missions`}
+                <div>
+                  <div style={{ fontSize: 10.5, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Missions</div>
+                  <div style={{ fontSize: 15, fontWeight: 500, marginTop: 3 }}>{a.totalMissions}</div>
                 </div>
               </div>
-            </Link>
-          ))}
-        </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
+                {a.verifierCompatible ? <Pill tone="accent">verifier-ready</Pill> : null}
+                <Pill tone="default">{a.executionMode}</Pill>
+                {a.trustProfile?.disputedMissions === 0 ? <Pill tone="ok">0 disputes</Pill> : null}
+              </div>
+            </Card>
+          );
+        })}
       </div>
-    </div>
+    </Shell>
   );
-}
-
-function slugify(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, 48) || "agent";
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
 }
