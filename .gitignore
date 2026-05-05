@@ -19,3 +19,6 @@ yarn.lock
 
 # Local Solana harness artifacts (may contain keypairs/state)
 program/.bifrost-local/
+
+# Notes / exports
+BiFrost Export.html
