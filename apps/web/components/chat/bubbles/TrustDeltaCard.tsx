@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect } from 'react';
-import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import { motion, useMotionValue, useReducedMotion, useSpring, useTransform } from 'framer-motion';
 import { trustNumberSpring, arrowPulse } from '../bubbleVariants';
 
 export interface TrustDeltaCardProps {
@@ -11,8 +11,9 @@ export interface TrustDeltaCardProps {
 }
 
 export default function TrustDeltaCard({ agentName, before, delta, reason }: TrustDeltaCardProps) {
+  const reduce = useReducedMotion();
   const after = before + delta;
-  const motionVal = useMotionValue(before);
+  const motionVal = useMotionValue(reduce ? after : before);
   const spring = useSpring(motionVal, trustNumberSpring);
   const display = useTransform(spring, (v) => v.toFixed(1));
   useEffect(() => {
@@ -55,7 +56,7 @@ export default function TrustDeltaCard({ agentName, before, delta, reason }: Tru
       <motion.span
         variants={arrowPulse}
         initial="initial"
-        animate={isZero ? 'initial' : 'pulse'}
+        animate={isZero || reduce ? 'initial' : 'pulse'}
         style={{ fontSize: 12, color }}
       >
         {arrow} {delta > 0 ? `+${delta.toFixed(1)}` : delta.toFixed(1)}
