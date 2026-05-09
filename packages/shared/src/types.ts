@@ -227,6 +227,7 @@ export interface AiEvalResult {
   acceptedClaims: string[];
   rejectedClaims: string[];
   evidenceRefs: string[];
+  reasoningTrace?: string;
 }
 
 export interface EvaluationReport {
@@ -290,6 +291,8 @@ export interface RegistryAgent {
   phaseSchema: AgentPhaseDefinition[];
   registrationStatus?: RegistryApplicationStatus;
   certifiedCapabilities?: CertifiedCapability[];
+  agentRegistryPda?: string;
+  anchorTxSignature?: string;
   evaluationSummary?: {
     latestReportId: string;
     latestScore: number;

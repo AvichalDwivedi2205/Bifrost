@@ -1,4 +1,5 @@
 import type {
+  AiEvalResult,
   CertifiedCapability,
   DeterministicEvalResult,
   EvaluationReport,
@@ -6,11 +7,13 @@ import type {
 } from "@bifrost/shared";
 import { nanoid } from "nanoid";
 
+import { LLMRouter } from "../../providers/llm/router";
 import { hashJson } from "../registry-application-store";
 import { BifrostSolanaClient } from "../solana/bifrost-client";
 
 export class RegistryEvaluationRunner {
   private readonly solana = new BifrostSolanaClient();
+  private readonly llm = new LLMRouter();
 
   async run(application: RegistryApplication): Promise<{
     report: EvaluationReport;
@@ -22,7 +25,7 @@ export class RegistryEvaluationRunner {
     const hardFailed = deterministicResults.some(
       (result) => result.hardFail && result.status === "failed",
     );
-    const aiResults = buildAiResults(application);
+    const aiResults = await runAiJudges(this.llm, application);
     const aiNeedsReview = aiResults.some((result) => result.verdict === "needs_review");
     const claimsRejected = [
       ...new Set(aiResults.flatMap((result) => result.rejectedClaims)),
@@ -48,22 +51,22 @@ export class RegistryEvaluationRunner {
           ? "passed"
           : "failed";
 
-    const certifiedCapabilities =
-      status === "passed"
-        ? application.manifest.capabilities
-            .filter((capability) => claimsVerified.includes(capability.id))
-            .map<CertifiedCapability>((capability) => ({
-              capabilityId: capability.id,
-              label: capability.label,
-              version: capability.version,
-              inputSchemaHash: hashJson(capability.inputSchema),
-              outputSchemaHash: hashJson(capability.outputSchema),
-              evaluationSuiteId: capability.evaluationSuiteId,
-              latestScore: overallScore,
-              status: "sandbox_passed",
-              expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-            }))
-        : [];
+    const isAnchorable = status === "passed" || status === "needs_review";
+    const certifiedCapabilities = isAnchorable
+      ? application.manifest.capabilities
+          .filter((capability) => claimsVerified.includes(capability.id))
+          .map<CertifiedCapability>((capability) => ({
+            capabilityId: capability.id,
+            label: capability.label,
+            version: capability.version,
+            inputSchemaHash: hashJson(capability.inputSchema),
+            outputSchemaHash: hashJson(capability.outputSchema),
+            evaluationSuiteId: capability.evaluationSuiteId,
+            latestScore: overallScore,
+            status: status === "passed" ? "sandbox_passed" : "needs_review",
+            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          }))
+      : [];
 
     const reportBase = {
       id: `eval_${nanoid(10)}`,
@@ -100,7 +103,7 @@ export class RegistryEvaluationRunner {
     };
 
     const anchor: { txSignature?: string; agentRegistryPda?: string } =
-      status === "passed"
+      isAnchorable
         ? await this.solana.anchorAgentRegistry(application.manifest, {
             capabilityHash: hashJson(certifiedCapabilities),
             metadataHash: application.manifestHash,
@@ -154,9 +157,136 @@ function buildDeterministicResults(application: RegistryApplication): Determinis
   return [...protocolChecks, ...schemaChecks];
 }
 
-function buildAiResults(application: RegistryApplication) {
+interface JudgeOutput {
+  verdict: "pass" | "fail" | "needs_review";
+  score: number;
+  confidence: number;
+  summary: string;
+  acceptedClaims: string[];
+  rejectedClaims: string[];
+  reasoning: string;
+}
+
+async function runAiJudges(llm: LLMRouter, application: RegistryApplication): Promise<AiEvalResult[]> {
   const manifest = application.manifest;
-  const claimIds = manifest.capabilities.map((capability) => capability.id);
+  const claimIds = manifest.capabilities.map((c) => c.id);
+  const manifestSummary = JSON.stringify(
+    {
+      agentId: manifest.agentId,
+      role: manifest.role,
+      executionMode: manifest.executionMode,
+      description: manifest.description,
+      capabilities: manifest.capabilities.map((c) => ({
+        id: c.id,
+        label: c.label,
+        description: c.description,
+        version: c.version,
+        inputSchema: c.inputSchema.slice(0, 280),
+        outputSchema: c.outputSchema.slice(0, 280),
+        requiredTools: c.requiredTools,
+        allowedServices: c.allowedServices,
+      })),
+      supportedServices: manifest.supportedServices,
+      spendPolicy: manifest.spendPolicy,
+      phaseSchema: manifest.phaseSchema.map((p) => ({
+        id: p.id,
+        label: p.label,
+        description: p.description,
+      })),
+    },
+    null,
+    2,
+  );
+
+  const schemaHint = `Schema:
+{
+  "verdict": "pass" | "fail" | "needs_review",
+  "score": 0.0,                 // 0..1
+  "confidence": 0.0,            // 0..1
+  "summary": "string (1-2 sentences, plain text, judge's overall finding)",
+  "acceptedClaims": ["capabilityId"],
+  "rejectedClaims": ["capabilityId"],
+  "reasoning": "string (concrete reasoning quoting fields from the manifest)"
+}`;
+
+  const judges: Array<{
+    judgeId: string;
+    label: string;
+    system: string;
+    prompt: string;
+    fallback: () => JudgeOutput;
+  }> = [
+    {
+      judgeId: "strict-correctness",
+      label: "Strict correctness judge",
+      system:
+        "You are a strict registry-correctness judge for an autonomous-agent platform. Reject capabilities whose schemas are too generic, descriptions too thin, role/capability mismatched, or whose declared services don't fit the role. Reasoning must quote specific manifest fields.",
+      prompt: `Evaluate this agent registry application. List capability ids in acceptedClaims and rejectedClaims separately.\n\nMANIFEST:\n${manifestSummary}`,
+      fallback: () => buildHeuristicJudge(application, "strict"),
+    },
+    {
+      judgeId: "adversarial-skeptic",
+      label: "Adversarial skeptic judge",
+      system:
+        "You are an adversarial skeptic judge. Hunt for overclaiming, missing safety constraints, unsafe service requests, vague spend policy, schema gaps, and role drift. Default to 'needs_review' if any concern is plausible. Reasoning must quote fields you found suspect.",
+      prompt: `Attack this manifest. What would a malicious or careless agent slip past? Place suspect capability ids in rejectedClaims.\n\nMANIFEST:\n${manifestSummary}`,
+      fallback: () => buildHeuristicJudge(application, "skeptic"),
+    },
+  ];
+
+  const results = await Promise.all(
+    judges.map(async ({ judgeId, label, system, prompt, fallback }) => {
+      let output: JudgeOutput;
+      try {
+        output = await llm.generateObject<JudgeOutput>({
+          task: `registry_judge_${judgeId}`,
+          system,
+          prompt,
+          schemaHint,
+          temperature: 0.1,
+        });
+        // Sanitize claim ids — accept only ids actually in the manifest.
+        const validIds = new Set(claimIds);
+        output.acceptedClaims = (output.acceptedClaims ?? []).filter((id) => validIds.has(id));
+        output.rejectedClaims = (output.rejectedClaims ?? []).filter((id) => validIds.has(id));
+        output.score = clamp01(Number(output.score) || 0);
+        output.confidence = clamp01(Number(output.confidence) || 0);
+      } catch (err) {
+        console.warn(
+          `[registry-judge:${judgeId}] LLM call failed, falling back to heuristic: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        output = fallback();
+      }
+      const result: AiEvalResult = {
+        judgeId,
+        label,
+        verdict: output.verdict,
+        score: output.score,
+        confidence: output.confidence,
+        summary: output.summary,
+        acceptedClaims: output.acceptedClaims,
+        rejectedClaims: output.rejectedClaims,
+        evidenceRefs: [`artifact://${application.id}/${judgeId}`],
+        reasoningTrace: output.reasoning,
+      };
+      return result;
+    }),
+  );
+
+  return results;
+}
+
+function clamp01(v: number): number {
+  if (Number.isNaN(v)) return 0;
+  return Math.max(0, Math.min(1, Number(v.toFixed(2))));
+}
+
+/** Heuristic fallback used only when the LLM call fails (offline / bad JSON / rate-limit). */
+function buildHeuristicJudge(application: RegistryApplication, mode: "strict" | "skeptic"): JudgeOutput {
+  const manifest = application.manifest;
+  const claimIds = manifest.capabilities.map((c) => c.id);
   const rubricFailures = manifest.capabilities
     .filter((capability) => {
       const text = `${capability.id} ${capability.label} ${capability.description}`.toLowerCase();
@@ -185,35 +315,23 @@ function buildAiResults(application: RegistryApplication) {
     )
     .map((capability) => capability.id);
   const needsReview =
-    manifest.description.length < 32 || manifest.capabilities.length > 5 || weakClaims.length > 0;
-
-  return [
-    {
-      judgeId: "strict-correctness",
-      label: "Strict correctness judge",
-      verdict: needsReview ? ("needs_review" as const) : ("pass" as const),
-      score: needsReview ? 0.68 : 0.88,
-      confidence: needsReview ? 0.62 : 0.82,
-      summary: needsReview
+    mode === "skeptic"
+      ? weakClaims.length > 0
+      : manifest.description.length < 32 || manifest.capabilities.length > 5 || weakClaims.length > 0;
+  return {
+    verdict: needsReview ? "needs_review" : "pass",
+    score: needsReview ? (mode === "strict" ? 0.68 : 0.66) : mode === "strict" ? 0.88 : 0.86,
+    confidence: needsReview ? 0.62 : 0.82,
+    summary: needsReview
+      ? mode === "strict"
         ? "Claims need human review because at least one description, schema, or role mapping is too thin or risky."
-        : "Claims are specific enough and role-aligned for sandbox certification.",
-      acceptedClaims: claimIds.filter((claim) => !weakClaims.includes(claim)),
-      rejectedClaims: weakClaims,
-      evidenceRefs: [`artifact://${application.id}/strict-correctness`],
-    },
-    {
-      judgeId: "adversarial-skeptic",
-      label: "Adversarial skeptic judge",
-      verdict: weakClaims.length > 0 ? ("needs_review" as const) : ("pass" as const),
-      score: weakClaims.length > 0 ? 0.66 : 0.86,
-      confidence: weakClaims.length > 0 ? 0.64 : 0.8,
-      summary:
-        weakClaims.length > 0
-          ? "One or more claims looked overbroad, unsafe, under-specified, or poorly matched to the declared role."
-          : "No obvious overclaiming found in manifest, schemas, or phase plan.",
-      acceptedClaims: claimIds.filter((claim) => !weakClaims.includes(claim)),
-      rejectedClaims: weakClaims,
-      evidenceRefs: [`artifact://${application.id}/adversarial-skeptic`],
-    },
-  ];
+        : "One or more claims looked overbroad, unsafe, under-specified, or poorly matched to the declared role."
+      : mode === "strict"
+        ? "Claims are specific enough and role-aligned for sandbox certification."
+        : "No obvious overclaiming found in manifest, schemas, or phase plan.",
+    acceptedClaims: claimIds.filter((id) => !weakClaims.includes(id)),
+    rejectedClaims: weakClaims,
+    reasoning:
+      "[heuristic-fallback] LLM unavailable; used deterministic rubric on description length, role alignment, and schema specificity.",
+  };
 }
