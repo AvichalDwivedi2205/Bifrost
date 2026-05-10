@@ -22,11 +22,7 @@ export default function ChainFooter({ mission }: ChainFooterProps) {
       role="status"
       aria-label="On-chain transactions"
       style={{
-        position: 'fixed',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        zIndex: 10,
+        flexShrink: 0,
         padding: '8px 16px',
         background: 'oklch(0.10 0.012 260 / 0.78)',
         borderTop: '1px solid var(--hairline)',

@@ -26,7 +26,15 @@ import EventStream from './EventStream';
 import TreasuryBar from './TreasuryBar';
 import ChainFooter from './ChainFooter';
 import ChatComposer from './ChatComposer';
-import { initialIntake, intakeNext, intakeToMissionInput, type IntakeState } from '../../lib/intakeFlow';
+import {
+  clearIntake,
+  initialIntake,
+  intakeNext,
+  intakeToMissionInput,
+  loadIntake,
+  saveIntake,
+  type IntakeState,
+} from '../../lib/intakeFlow';
 import TeamReviewSlideOver from './slideOver/TeamReviewSlideOver';
 import SpendSlideOver from './slideOver/SpendSlideOver';
 import DisputeSlideOver from './slideOver/DisputeSlideOver';
@@ -82,6 +90,13 @@ export default function MissionChat({ mode, missionId }: MissionChatProps) {
     };
   }, []);
 
+  // Hydrate intake from localStorage on mount (intake mode only).
+  useEffect(() => {
+    if (mode !== 'intake') return;
+    const stored = loadIntake();
+    if (stored) patch({ intake: stored });
+  }, [mode, patch]);
+
   // WS + initial fetch for live mode.
   useEffect(() => {
     if (mode !== 'live' || !missionId) return;
@@ -119,8 +134,11 @@ export default function MissionChat({ mode, missionId }: MissionChatProps) {
       const advanced = intakeNext(state.intake, text);
       if (advanced.state.step !== 'ready') {
         patch({ intake: advanced.state });
+        saveIntake(advanced.state);
         return;
       }
+      patch({ intake: advanced.state });
+      saveIntake(advanced.state);
       // ready -> create mission
       if (!wallet.publicKey || !wallet.signMessage) {
         walletModal.setVisible(true);
@@ -133,6 +151,7 @@ export default function MissionChat({ mode, missionId }: MissionChatProps) {
         const message = buildMissionAuthorizationMessage(input, issuedAt);
         const sigBytes = await wallet.signMessage(new TextEncoder().encode(message));
         const created = await createMission(input, { issuedAt, signature: encodeSig(sigBytes) });
+        clearIntake();
         patch({ walletPending: false });
         router.replace(`/missions/${created.id}`);
       } catch (err) {
@@ -295,11 +314,12 @@ export default function MissionChat({ mode, missionId }: MissionChatProps) {
     <div
       style={{
         position: 'relative',
-        minHeight: '100vh',
+        flex: 1,
+        minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
-        paddingTop: state.mission ? 64 : 0,
-        paddingBottom: state.mission ? 80 : 0,
+        background: 'var(--bg)',
+        color: 'var(--text)',
       }}
     >
       <TreasuryBar mission={state.mission} />
@@ -307,28 +327,40 @@ export default function MissionChat({ mode, missionId }: MissionChatProps) {
         style={{
           flex: 1,
           width: '100%',
-          maxWidth: 760,
-          margin: '0 auto',
-          padding: '24px 20px 200px',
+          minHeight: 0,
           display: 'flex',
-          flexDirection: 'column',
+          justifyContent: 'center',
+          overflow: 'hidden',
         }}
       >
-        <EventStream
-          mission={state.mission}
-          bubbles={bubbles}
-          intake={state.intake}
-          mode={mode}
-          walletPending={state.walletPending}
-          onChipClick={onChipClick}
-          onAnswerCheckpoint={onAnswerCheckpoint}
-          onOpenTeamReview={() => openSlideOver('team')}
-          onOpenSpend={(approvalId) => openSlideOver('spend', { approvalId })}
-          onOpenDispute={() => openSlideOver('dispute')}
-          onOpenPreview={openPreviewModal}
-          onRebuild={onRebuild}
-        />
+        <div
+          style={{
+            flex: 1,
+            width: '100%',
+            maxWidth: 760,
+            padding: '24px 20px 12px',
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
+          }}
+        >
+          <EventStream
+            mission={state.mission}
+            bubbles={bubbles}
+            intake={state.intake}
+            mode={mode}
+            walletPending={state.walletPending}
+            onChipClick={onChipClick}
+            onAnswerCheckpoint={onAnswerCheckpoint}
+            onOpenTeamReview={() => openSlideOver('team')}
+            onOpenSpend={(approvalId) => openSlideOver('spend', { approvalId })}
+            onOpenDispute={() => openSlideOver('dispute')}
+            onOpenPreview={openPreviewModal}
+            onRebuild={onRebuild}
+          />
+        </div>
       </div>
+      <ChainFooter mission={state.mission} />
       <ChatComposer
         disabled={state.walletPending || (mode === 'live' && !state.mission)}
         placeholder={
@@ -341,7 +373,6 @@ export default function MissionChat({ mode, missionId }: MissionChatProps) {
         onSubmit={mode === 'intake' ? onIntakeSubmit : () => undefined}
         actionLabel={state.intake.step === 'ready' ? 'Sign brief & launch' : 'Send'}
       />
-      <ChainFooter mission={state.mission} />
       <TeamReviewSlideOver
         open={state.openSlideOver.kind === 'team'}
         onClose={closeSlideOver}

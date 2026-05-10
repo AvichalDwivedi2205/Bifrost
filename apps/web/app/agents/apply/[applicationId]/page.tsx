@@ -5,6 +5,7 @@ import type { RegistryApplication, EvaluationReport } from '@bifrost/shared';
 import { Shell } from '@/components/ui/shell';
 import { Card, Btn, Pill } from '@/components/ui/primitives';
 import { VerificationCheckRow } from '@/components/VerificationCheckRow';
+import TxLink from '@/components/solana/TxLink';
 import {
   fetchRegistryApplication,
   runRegistryProtocolCheck,
@@ -77,6 +78,58 @@ function EvaluationReportCard({ report }: { report: EvaluationReport }) {
           ? `, ${report.claimsRejected.length} rejected`
           : ''}
       </div>
+      {report.aiResults && report.aiResults.length > 0 && (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--hairline)' }}>
+          <div
+            style={{
+              fontSize: 10.5,
+              color: 'var(--text-dim)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              marginBottom: 8,
+            }}
+          >
+            AI judge reasoning
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {report.aiResults.map((judge, idx) => {
+              const tone =
+                judge.verdict === 'pass' ? 'ok' : judge.verdict === 'fail' ? 'danger' : 'warn';
+              return (
+                <div
+                  key={`${judge.judgeId}-${idx}`}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid var(--hairline)',
+                    background: 'var(--surface-2)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
+                      {judge.label}
+                    </span>
+                    <Pill tone={tone}>{judge.verdict}</Pill>
+                    <span className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      score {(judge.score * 100).toFixed(0)}% · confidence {(judge.confidence * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  {judge.summary && (
+                    <div style={{ fontSize: 12, color: 'var(--text)', marginBottom: 6 }}>
+                      {judge.summary}
+                    </div>
+                  )}
+                  {judge.reasoningTrace && (
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                      {judge.reasoningTrace}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
@@ -303,24 +356,64 @@ export default function RegistryApplicationStatusPage() {
 
       {/* On-chain Anchor */}
       {application.anchorTxSignature && (
-        <Card style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>
-            On-chain Anchor
+        <Card
+          style={{
+            marginBottom: 14,
+            border: '1px solid oklch(0.74 0.13 145 / 0.55)',
+            background: 'oklch(0.16 0.05 145 / 0.18)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ok)' }}>Anchored on devnet</span>
+            <Pill tone="ok">live</Pill>
           </div>
-          <a
-            href={`https://solscan.io/tx/${application.anchorTxSignature}?cluster=devnet`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mono"
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {application.agentRegistryPda && (
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span
+                  style={{
+                    fontSize: 10.5,
+                    color: 'var(--text-dim)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    minWidth: 110,
+                  }}
+                >
+                  Registry PDA
+                </span>
+                <TxLink
+                  signature={application.agentRegistryPda}
+                  cluster="devnet"
+                  kind="address"
+                  short
+                />
+              </div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+              <span
+                style={{
+                  fontSize: 10.5,
+                  color: 'var(--text-dim)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  minWidth: 110,
+                }}
+              >
+                Anchor tx
+              </span>
+              <TxLink signature={application.anchorTxSignature} cluster="devnet" short />
+            </div>
+          </div>
+          <div
             style={{
-              fontSize: 11,
-              color: 'var(--accent)',
-              wordBreak: 'break-all',
-              textDecoration: 'underline',
+              marginTop: 10,
+              fontSize: 11.5,
+              color: 'var(--text-muted)',
+              lineHeight: 1.5,
             }}
           >
-            {application.anchorTxSignature}
-          </a>
+            register_agent ix written to Solana devnet. Agent is now selectable in mission lineups.
+          </div>
         </Card>
       )}
 

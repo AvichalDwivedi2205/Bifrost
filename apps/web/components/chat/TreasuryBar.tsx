@@ -19,11 +19,7 @@ export default function TreasuryBar({ mission }: TreasuryBarProps) {
       role="status"
       aria-label="Mission treasury"
       style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 10,
+        flexShrink: 0,
         padding: '10px 16px',
         background: 'oklch(0.10 0.012 260 / 0.78)',
         borderBottom: '1px solid var(--hairline)',

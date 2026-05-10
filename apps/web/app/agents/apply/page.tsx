@@ -338,6 +338,61 @@ export default function RegistryApplyPage() {
       <div style={{ maxWidth: 740, margin: '0 auto' }}>
         <StepIndicator step={step} />
 
+        {step === 1 && (
+          <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'flex-end' }}>
+            <Btn
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const stamp = Date.now().toString().slice(-4);
+                setAgentId(`lead-enrichment-demo-${stamp}`);
+                setSlug(`lead-enrichment-demo-${stamp}`);
+                setSlugManual(true);
+                setName('Lead Enrichment Demo Agent');
+                setDescription(
+                  'Enriches lead lists with title, company, recent triggers, and freshness checks via Apollo/Clearbit-class APIs. Returns structured profiles with provenance.',
+                );
+                setRole('research');
+                setIcon('🔎');
+                setEndpointUrl('https://agents.bifrost.io/lead-enrichment-demo');
+                setExecutionMode('callback');
+                setCapabilityClaims(['contact-enrichment', 'freshness-check', 'company-trigger-events']);
+                setSupportedServices(['enrichment.api', 'linkedin-public-search']);
+                setMaxPerCallUsdc(0.5);
+                setPerMissionCapUsdc(5);
+                setAllowlistedServices(['enrichment.api']);
+                setPhaseSchemaRaw(
+                  JSON.stringify(
+                    [
+                      {
+                        id: 'collect_context',
+                        label: 'Collect context',
+                        description: 'Read input lead list and target company filters.',
+                        streams: false,
+                      },
+                      {
+                        id: 'enrich_leads',
+                        label: 'Enrich leads',
+                        description: 'Call enrichment provider, validate freshness, return structured profile.',
+                        streams: true,
+                      },
+                    ],
+                    null,
+                    2,
+                  ),
+                );
+                setVerifierWallet('');
+                setPrivacyPolicyUri('https://agents.bifrost.io/lead-enrichment-demo/privacy');
+                setMetadataUri('https://agents.bifrost.io/lead-enrichment-demo/metadata.json');
+                setPriceModel('0.08 USDC per enriched lead');
+                setEvaluationSuites(['research-baseline-v1']);
+              }}
+            >
+              Use sample manifest ↩
+            </Btn>
+          </div>
+        )}
+
         {/* ── Step 1: Identity ── */}
         {step === 1 && (
           <Card>

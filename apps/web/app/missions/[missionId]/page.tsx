@@ -1,4 +1,5 @@
 import MissionChat from '../../../components/chat/MissionChat';
+import { Shell } from '../../../components/ui/shell';
 
 interface MissionPageProps {
   params: Promise<{ missionId: string }>;
@@ -6,5 +7,14 @@ interface MissionPageProps {
 
 export default async function MissionPage({ params }: MissionPageProps) {
   const { missionId } = await params;
-  return <MissionChat mode="live" missionId={missionId} />;
+  return (
+    <Shell
+      title="Mission cockpit"
+      subtitle={`Live thread · ${missionId}`}
+      padBody={false}
+      fillBody
+    >
+      <MissionChat mode="live" missionId={missionId} />
+    </Shell>
+  );
 }

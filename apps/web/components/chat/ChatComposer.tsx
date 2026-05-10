@@ -28,12 +28,10 @@ export default function ChatComposer({ disabled, placeholder, onSubmit, actionLa
   return (
     <div
       style={{
-        position: 'fixed',
-        bottom: 44,
-        left: 0,
-        right: 0,
-        zIndex: 30,
-        padding: '12px 16px',
+        flexShrink: 0,
+        padding: '12px 16px 16px',
+        background: 'var(--bg)',
+        borderTop: '1px solid var(--hairline)',
       }}
     >
       <div

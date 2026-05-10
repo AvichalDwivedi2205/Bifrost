@@ -156,6 +156,7 @@ export function Shell({
   pill,
   actions,
   padBody = true,
+  fillBody = false,
 }: {
   children: React.ReactNode;
   title: string;
@@ -163,13 +164,24 @@ export function Shell({
   pill?: React.ReactNode;
   actions?: React.ReactNode;
   padBody?: boolean;
+  fillBody?: boolean;
 }) {
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
+    <div style={{ display: 'flex', height: fillBody ? '100vh' : 'auto', minHeight: '100vh', background: 'var(--bg)' }}>
       <Sidebar />
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
         <Topbar title={title} subtitle={subtitle} pill={pill} actions={actions} />
-        <div style={{ flex: 1, padding: padBody ? '24px 28px 48px' : 0, maxWidth: '100%', overflowX: 'hidden' }}>
+        <div
+          style={{
+            flex: 1,
+            padding: padBody ? '24px 28px 48px' : 0,
+            maxWidth: '100%',
+            overflowX: 'hidden',
+            display: fillBody ? 'flex' : 'block',
+            flexDirection: fillBody ? 'column' : undefined,
+            minHeight: 0,
+          }}
+        >
           {children}
         </div>
       </main>

@@ -1,5 +1,7 @@
 import type { MissionInput } from '@bifrost/shared';
 
+const STORAGE_KEY = 'bifrost:intake:v1';
+
 export type IntakeStep = 'ask_brief' | 'ask_product_name' | 'ask_target' | 'ask_domain_cap' | 'ready';
 
 export interface IntakeState {
@@ -104,6 +106,40 @@ function parseDomainCap(text: string): number {
   const n = Number(match);
   if (Number.isNaN(n)) return 0;
   return Math.min(200, Math.max(0, n));
+}
+
+export function saveIntake(state: IntakeState): void {
+  if (typeof window === 'undefined') return;
+  if (state.step === 'ready') return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+export function loadIntake(): IntakeState | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as IntakeState;
+    if (!parsed || typeof parsed !== 'object' || !parsed.step || !Array.isArray(parsed.history)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearIntake(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
 }
 
 export function intakeToMissionInput(state: IntakeState, authorityWallet: string): MissionInput {

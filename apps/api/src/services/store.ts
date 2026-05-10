@@ -6,7 +6,7 @@ import type {
   MissionTask,
   RegistryAgent,
 } from "@bifrost/shared";
-import { demoMissionRecord } from "@bifrost/shared";
+import { demoFixtureMissions, demoMissionRecord } from "@bifrost/shared";
 import type { ConvexHttpClient } from "convex/browser";
 import { nanoid } from "nanoid";
 
@@ -30,6 +30,19 @@ export class MissionStore {
 
   private seedDemoRecord(): void {
     this.records.set(demoMissionRecord.id, structuredClone(demoMissionRecord));
+    for (const fixture of demoFixtureMissions) {
+      this.records.set(fixture.id, structuredClone(fixture));
+    }
+  }
+
+  reset(options: MissionStoreOptions = {}): string | undefined {
+    this.records.clear();
+    this.listeners.clear();
+    if (options.seedDemo !== false) {
+      this.seedDemoRecord();
+      return demoMissionRecord.id;
+    }
+    return undefined;
   }
 
   list(): MissionRecord[] {
