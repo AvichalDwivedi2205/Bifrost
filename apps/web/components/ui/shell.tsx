@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { WalletMenu } from '../wallet-menu';
 import { Icon, Logo } from './icons';
-import { useTheme } from './theme-provider';
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 const NAV_SECTIONS = [
@@ -30,7 +29,6 @@ const NAV_SECTIONS = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { theme, toggle } = useTheme();
 
   return (
     <aside style={{
@@ -41,21 +39,10 @@ export function Sidebar() {
       height: '100vh', position: 'sticky', top: 0,
       padding: '16px 12px',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px 18px' }}>
+      <div style={{ padding: '6px 8px 18px' }}>
         <Link href="/" style={{ textDecoration: 'none', color: 'var(--text)' }}>
           <Logo />
         </Link>
-        <button
-          onClick={toggle}
-          style={{
-            width: 28, height: 28, borderRadius: 7,
-            background: 'transparent', border: '1px solid var(--hairline)',
-            color: 'var(--text-muted)', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={13} />
-        </button>
       </div>
 
       <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 18, overflowY: 'auto' }}>

@@ -1,5 +1,6 @@
 'use client';
 import React from 'react';
+import { motion, useMotionValue, useSpring } from 'framer-motion';
 import { Icon } from './icons';
 
 // ── Pill ──────────────────────────────────────────────────────────────────────
@@ -75,6 +76,7 @@ export function Btn({
   icon,
   href,
   disabled,
+  magnetic = true,
 }: {
   children?: React.ReactNode;
   variant?: BtnVariant;
@@ -84,9 +86,15 @@ export function Btn({
   icon?: string;
   href?: string;
   disabled?: boolean;
+  magnetic?: boolean;
 }) {
   const s = BTN_SIZES[size];
   const v = BTN_VARIANTS[variant];
+
+  const mx = useMotionValue(0);
+  const my = useMotionValue(0);
+  const sx = useSpring(mx, { stiffness: 280, damping: 22, mass: 0.4 });
+  const sy = useSpring(my, { stiffness: 280, damping: 22, mass: 0.4 });
 
   const baseStyle: React.CSSProperties = {
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -94,29 +102,71 @@ export function Btn({
     fontFamily: 'var(--font-sans)', fontWeight: 500, letterSpacing: '-0.01em',
     borderRadius: 10, cursor: disabled ? 'not-allowed' : 'pointer',
     userSelect: 'none', textDecoration: 'none',
-    transition: 'all 0.2s var(--ease)', opacity: disabled ? 0.5 : 1,
+    transition: 'background 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease), box-shadow 0.2s var(--ease)',
+    opacity: disabled ? 0.5 : 1,
     ...v, ...style,
   };
 
+  const handleMove = (e: React.MouseEvent<HTMLElement>) => {
+    if (!magnetic || disabled) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = e.clientX - cx;
+    const dy = e.clientY - cy;
+    const dist = Math.hypot(dx, dy);
+    const radius = 32;
+    if (dist > radius) {
+      mx.set(0); my.set(0);
+      return;
+    }
+    const pull = 1 - dist / radius;
+    mx.set(dx * 0.18 * pull);
+    my.set(dy * 0.18 * pull);
+  };
+
+  const handleLeave = (e: React.MouseEvent<HTMLElement>) => {
+    if (variant === 'ghost') (e.currentTarget as HTMLElement).style.background = 'transparent';
+    mx.set(0); my.set(0);
+  };
+
+  const handleEnter = (e: React.MouseEvent<HTMLElement>) => {
+    if (variant === 'ghost') (e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)';
+  };
+
   if (href) {
-    return <a href={href} style={baseStyle}>{icon && <Icon name={icon} size={s.iconSize} />}{children}</a>;
+    return (
+      <motion.a
+        href={href}
+        style={{ ...baseStyle, x: sx, y: sy }}
+        onMouseMove={handleMove}
+        onMouseLeave={handleLeave}
+        onMouseEnter={handleEnter}
+        whileHover={disabled ? undefined : { scale: 1.015 }}
+        whileTap={disabled ? undefined : { scale: 0.985 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 22 }}
+      >
+        {icon && <Icon name={icon} size={s.iconSize} />}
+        {children}
+      </motion.a>
+    );
   }
 
   return (
-    <button
+    <motion.button
       onClick={onClick}
       disabled={disabled}
-      style={baseStyle}
-      onMouseEnter={(e) => {
-        if (variant === 'ghost') (e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)';
-      }}
-      onMouseLeave={(e) => {
-        if (variant === 'ghost') (e.currentTarget as HTMLElement).style.background = 'transparent';
-      }}
+      style={{ ...baseStyle, x: sx, y: sy }}
+      onMouseMove={handleMove}
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
+      whileHover={disabled ? undefined : { scale: 1.015 }}
+      whileTap={disabled ? undefined : { scale: 0.985 }}
+      transition={{ type: 'spring', stiffness: 320, damping: 22 }}
     >
       {icon && <Icon name={icon} size={s.iconSize} />}
       {children}
-    </button>
+    </motion.button>
   );
 }
 
@@ -127,6 +177,7 @@ export function Card({
   pad = 20,
   elev = false,
   glow = false,
+  hover = false,
   onClick,
 }: {
   children: React.ReactNode;
@@ -134,24 +185,38 @@ export function Card({
   pad?: number | string;
   elev?: boolean;
   glow?: boolean;
+  hover?: boolean;
   onClick?: () => void;
 }) {
+  const baseShadow = glow ? 'var(--shadow-glow)' : elev ? 'var(--shadow-md)' : 'var(--shadow-sm)';
+  const baseStyle: React.CSSProperties = {
+    background: 'var(--surface)',
+    border: '1px solid var(--hairline)',
+    borderRadius: 16,
+    padding: pad,
+    boxShadow: baseShadow,
+    transition: 'box-shadow 0.22s var(--ease), border-color 0.22s var(--ease), transform 0.22s var(--ease)',
+    position: 'relative',
+    ...style,
+  };
+
+  if (!hover) {
+    return <div onClick={onClick} style={baseStyle}>{children}</div>;
+  }
+
   return (
-    <div
+    <motion.div
       onClick={onClick}
-      style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--hairline)',
-        borderRadius: 16,
-        padding: pad,
-        boxShadow: glow ? 'var(--shadow-glow)' : elev ? 'var(--shadow-md)' : 'var(--shadow-sm)',
-        transition: 'all 0.25s var(--ease)',
-        position: 'relative',
-        ...style,
+      style={baseStyle}
+      whileHover={{
+        y: -3,
+        boxShadow: 'var(--shadow-lg), 0 0 0 1px var(--accent-soft)',
+        borderColor: 'color-mix(in oklch, var(--accent) 28%, var(--hairline))',
       }}
+      transition={{ type: 'spring', stiffness: 240, damping: 22 }}
     >
       {children}
-    </div>
+    </motion.div>
   );
 }
 

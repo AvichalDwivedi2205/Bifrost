@@ -1,7 +1,7 @@
 'use client';
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect } from 'react';
 
-type Theme = 'dark' | 'light';
+type Theme = 'dark';
 
 interface ThemeCtxValue {
   theme: Theme;
@@ -11,21 +11,12 @@ interface ThemeCtxValue {
 const ThemeCtx = createContext<ThemeCtxValue>({ theme: 'dark', toggle: () => {} });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>('dark');
-
   useEffect(() => {
-    const stored = localStorage.getItem('bf-theme') as Theme | null;
-    if (stored === 'light' || stored === 'dark') setTheme(stored);
+    document.documentElement.setAttribute('data-theme', 'dark');
+    try { localStorage.removeItem('bf-theme'); } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('bf-theme', theme);
-  }, [theme]);
-
-  const toggle = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
-
-  return <ThemeCtx.Provider value={{ theme, toggle }}>{children}</ThemeCtx.Provider>;
+  return <ThemeCtx.Provider value={{ theme: 'dark', toggle: () => {} }}>{children}</ThemeCtx.Provider>;
 }
 
 export const useTheme = () => useContext(ThemeCtx);
