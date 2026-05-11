@@ -454,6 +454,27 @@ export async function registerMissionRoutes(
       }
     },
   );
+
+  app.post("/api/missions/:missionId/rebuild", async (request, reply) => {
+    const params = request.params as { missionId: string };
+    const existingMission = store.get(params.missionId);
+    if (!existingMission) {
+      return reply.code(404).send({ error: "Mission not found" });
+    }
+    if (existingMission.status !== "failed") {
+      return reply
+        .code(409)
+        .send({ error: `Cannot rebuild mission from status ${existingMission.status}` });
+    }
+    try {
+      const mission = await runner.rebuildLaunchMission(params.missionId);
+      return { mission };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to rebuild mission";
+      const statusCode = message.includes("not found") ? 404 : 400;
+      return reply.code(statusCode).send({ error: message });
+    }
+  });
 }
 
 function verifySignedAuthorization(
