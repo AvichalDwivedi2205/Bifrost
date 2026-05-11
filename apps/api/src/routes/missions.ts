@@ -97,13 +97,6 @@ export async function registerMissionRoutes(
   runner: MissionRunner,
   messageBus?: AgentMessageBus,
 ) {
-  app.get("/health", async () => ({
-    ok: true,
-    service: "bifrost-api",
-    missions: store.list().length,
-    runtime: runner.getRuntimeStatus(),
-  }));
-
   app.get("/api/demo/dashboard", async () => ({
     missions: store.list(),
   }));

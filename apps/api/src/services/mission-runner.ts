@@ -747,10 +747,6 @@ export class MissionRunner {
         await this.runLaunchPreviewTask(missionId);
         continue;
       }
-      if (!this.isTaskComplete(record, "task-verify-preview")) {
-        await this.runLaunchPreviewVerificationTask(missionId);
-        continue;
-      }
       if (!this.isTaskComplete(record, "task-domain")) {
         this.requestLaunchDomainCheckpoint(missionId);
         return;
