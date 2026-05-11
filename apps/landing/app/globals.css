@@ -1,0 +1,264 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
+
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --plasma-1: oklch(0.70 0.18 295);
+  --plasma-2: oklch(0.76 0.16 245);
+  --plasma-3: oklch(0.80 0.14 195);
+  --plasma-4: oklch(0.78 0.16 180);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+  --space-6: 48px;
+
+  --text-display: 56px;
+  --text-h1: 28px;
+  --text-h2: 20px;
+  --text-body: 15px;
+  --text-small: 13px;
+  --text-caption: 11px;
+  --text-mono: 12px;
+
+  /* Amber accent (matches /launch/dental-sdr brand) */
+  --accent: oklch(0.78 0.16 75);
+  --accent-fg: oklch(0.18 0.04 70);
+  --accent-soft: oklch(0.78 0.16 75 / 0.14);
+
+  --ok: oklch(0.74 0.13 145);
+  --warn: oklch(0.80 0.15 80);
+  --danger: oklch(0.65 0.18 30);
+  --pending: oklch(0.78 0.10 75);
+}
+
+:root, [data-theme="dark"] {
+  /* Refined dark "ink" cockpit — cooler base, neutral surfaces, tighter contrast. */
+  --bg: oklch(0.135 0.012 70);
+  --bg-elev: oklch(0.165 0.014 70);
+  --surface: oklch(0.195 0.016 72);
+  --surface-2: oklch(0.225 0.018 74);
+  --surface-hover: oklch(0.255 0.022 74);
+  --hairline: oklch(0.42 0.020 75 / 0.32);
+  --hairline-strong: oklch(0.50 0.030 75 / 0.55);
+
+  --text: oklch(0.97 0.015 82);
+  --text-muted: oklch(0.76 0.022 78);
+  --text-dim: oklch(0.58 0.022 78);
+
+  --shadow-sm: 0 1px 0 0 oklch(1 0 0 / 0.035) inset, 0 1px 2px oklch(0 0 0 / 0.45);
+  --shadow-md: 0 1px 0 0 oklch(1 0 0 / 0.04) inset, 0 10px 28px -8px oklch(0 0 0 / 0.6);
+  --shadow-lg: 0 1px 0 0 oklch(1 0 0 / 0.05) inset, 0 28px 72px -16px oklch(0 0 0 / 0.7);
+  --shadow-glow: 0 0 0 1px oklch(0.80 0.16 75 / 0.32), 0 0 40px -8px oklch(0.80 0.16 75 / 0.32);
+
+  --grid-line: oklch(0.95 0.04 75 / 0.035);
+  --noise-opacity: 0.025;
+  --ambient-opacity: 0.16;
+  --ambient-blend: soft-light;
+}
+
+[data-theme="light"] {
+  /* Warm paper-tone cockpit — mirrors the landing page light mode */
+  --bg: oklch(0.985 0.018 85);
+  --bg-elev: oklch(0.995 0.012 85);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.975 0.020 78);
+  --surface-hover: oklch(0.965 0.026 78);
+  --hairline: oklch(0.86 0.030 75);
+  --hairline-strong: oklch(0.78 0.045 75);
+
+  --text: oklch(0.18 0.026 70);
+  --text-muted: oklch(0.46 0.025 72);
+  --text-dim: oklch(0.62 0.020 72);
+
+  --shadow-sm: 0 1px 2px oklch(0.20 0.04 70 / 0.06);
+  --shadow-md: 0 1px 2px oklch(0.20 0.04 70 / 0.05), 0 8px 24px -8px oklch(0.20 0.04 70 / 0.14);
+  --shadow-lg: 0 2px 4px oklch(0.20 0.04 70 / 0.06), 0 24px 48px -12px oklch(0.20 0.04 70 / 0.18);
+  --shadow-glow: 0 0 0 1px oklch(0.78 0.16 75 / 0.28), 0 12px 36px -6px oklch(0.78 0.16 75 / 0.24);
+
+  --grid-line: oklch(0.20 0.04 70 / 0.045);
+  --noise-opacity: 0.025;
+  --ambient-opacity: 0.3;
+  --ambient-blend: screen;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+/* Grain — fixed, behind everything, ignores pointer events. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: var(--noise-opacity, 0.04);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  background-size: 160px 160px;
+}
+body > * { position: relative; z-index: 1; }
+
+.hairline { border: 1px solid var(--hairline); }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+}
+.card-elev {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-md);
+}
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
+  transition: background-color 0.35s var(--ease), color 0.35s var(--ease);
+}
+
+.mono { font-family: var(--font-mono); letter-spacing: 0; }
+
+/* Fraunces serif headings on cockpit pages — matches the landing page brand. */
+.serif {
+  font-family: var(--font-display, 'Fraunces'), 'Playfair Display', Georgia, serif;
+  font-weight: 420;
+  letter-spacing: -0.02em;
+}
+h1, h2 {
+  font-family: var(--font-display, 'Fraunces'), 'Playfair Display', Georgia, serif;
+  font-weight: 420;
+  letter-spacing: -0.02em;
+}
+
+/* Glass card variant for cockpit — amber-tinted backdrop blur. */
+.glass-card {
+  background: color-mix(in oklch, var(--surface) 78%, transparent);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  box-shadow: var(--shadow-md);
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--hairline-strong); border-radius: 10px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+::selection { background: var(--accent-soft); color: var(--text); }
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes spin-slow { to { transform: rotate(360deg); } }
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes dash-flow {
+  to { stroke-dashoffset: -40; }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes doodle-draw {
+  from { stroke-dashoffset: 900; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes doodle-draw-short {
+  from { stroke-dashoffset: 400; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes feature-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+input, textarea, button, select {
+  font-family: var(--font-sans);
+}
+a { color: inherit; }
+
+/* Cinematic moments. */
+@keyframes ring-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  50% { box-shadow: 0 0 0 6px color-mix(in oklch, var(--accent) 18%, transparent); }
+}
+@keyframes ring-burst {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--ok) 60%, transparent); }
+  100% { box-shadow: 0 0 0 28px color-mix(in oklch, var(--ok) 0%, transparent); }
+}
+@keyframes danger-flash {
+  0%   { background: var(--accent-soft); color: var(--accent); }
+  50%  { background: color-mix(in oklch, var(--danger) 28%, transparent); color: var(--danger); }
+  100% { background: color-mix(in oklch, var(--danger) 14%, transparent); color: var(--danger); }
+}
+@keyframes edge-tint {
+  0%   { box-shadow: inset 0 0 0 0 transparent; }
+  20%  { box-shadow: inset 0 0 16px 0 color-mix(in oklch, var(--danger) 22%, transparent); }
+  100% { box-shadow: inset 0 0 0 0 transparent; }
+}
+@keyframes ok-flash {
+  0%   { background: linear-gradient(135deg, var(--plasma-2), var(--plasma-1)); }
+  40%  { background: color-mix(in oklch, var(--ok) 80%, transparent); }
+  100% { background: linear-gradient(135deg, var(--plasma-2), var(--plasma-1)); }
+}
+@keyframes draw-check {
+  to { stroke-dashoffset: 0; }
+}
+@keyframes slide-up-toast {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes particle-up {
+  0%   { opacity: 0; transform: translate(var(--px, 0), 0) scale(0.8); }
+  20%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--px, 0), -36px) scale(1.1); }
+}
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes pill-drop {
+  0%   { opacity: 0; transform: translateY(-12px) scale(0.92); }
+  60%  { opacity: 1; transform: translateY(2px)   scale(1.04); }
+  100% { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  body::before { display: none; }
+}
