@@ -16,6 +16,10 @@ import { getConvexClient } from "./convex-client";
 export class RegistryApplicationStore {
   private readonly applications = new Map<string, RegistryApplication>();
 
+  reset(): void {
+    this.applications.clear();
+  }
+
   create(manifest: AgentManifest): RegistryApplication {
     const duplicate = [...this.applications.values()].find(
       (application) => application.manifest.agentId === manifest.agentId,

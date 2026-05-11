@@ -154,4 +154,9 @@ export class AgentMessageBus {
   getById(messageId: string): AgentMessage | undefined {
     return this.byId.get(messageId);
   }
+
+  reset(): void {
+    this.threads.clear();
+    this.byId.clear();
+  }
 }
