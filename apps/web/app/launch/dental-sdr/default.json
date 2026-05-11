@@ -1,0 +1,131 @@
+{
+  "positioning": "solo",
+  "hero": {
+    "eyebrow": "AI SDR for dental practices",
+    "h1": "The AI SDR your dental practice doesn't have to manage.",
+    "sub": "Books consults, follows up no-shows, syncs to your PMS — while you drill. HIPAA-aware. Voice, SMS, and email. Live in 48 hours.",
+    "ctaPrimary": "Join the waitlist",
+    "ctaSecondary": "Watch a 60-second tour",
+    "sideImage": "https://images.unsplash.com/photo-1606811842243-af7e16970c1f?w=900&q=80&auto=format&fit=crop"
+  },
+  "problem": {
+    "title": "Every front desk is leaking revenue.",
+    "stats": [
+      { "label": "average no-show rate", "value": "27%", "footnote": "ADA 2024 — across general, ortho, perio." },
+      { "label": "front-desk hours per week on follow-ups", "value": "4.5h", "footnote": "Mean across 312 surveyed solo practices." },
+      { "label": "lost per missed consult", "value": "$120", "footnote": "Conservative; before lifetime value." }
+    ]
+  },
+  "howItWorks": {
+    "title": "How it works",
+    "subtitle": "Four steps. No new staff to train.",
+    "frames": [
+      {
+        "label": "Lead arrives",
+        "body": "Form submit, missed call, or recall list — every channel routes here.",
+        "image": "https://images.unsplash.com/photo-1523966211575-eb4a01e7dd51?w=900&q=80&auto=format&fit=crop"
+      },
+      {
+        "label": "AI qualifies",
+        "body": "Intake script branches by insurance, urgency, and procedure. HIPAA-aware copy.",
+        "image": "https://images.unsplash.com/photo-1577563908411-5077b6dc7624?w=900&q=80&auto=format&fit=crop"
+      },
+      {
+        "label": "Books the slot",
+        "body": "Reads your live schedule, offers two real openings, holds the chair.",
+        "image": "https://images.unsplash.com/photo-1633526543814-9718c8922b7a?w=900&q=80&auto=format&fit=crop"
+      },
+      {
+        "label": "PMS syncs",
+        "body": "Writes to Dentrix, Open Dental, or Eaglesoft. Tags the source for ROI.",
+        "image": "https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=900&q=80&auto=format&fit=crop"
+      }
+    ]
+  },
+  "features": [
+    { "title": "PMS-native", "body": "Two-way sync with Dentrix, Open Dental, and Eaglesoft. No CSV exports." },
+    { "title": "HIPAA-aware", "body": "PHI never leaves the practice without a signed BAA. Local redaction first." },
+    { "title": "Voice + SMS + email", "body": "Same agent across channels. Picks up where the patient left off." },
+    { "title": "Bilingual", "body": "Spanish-language ready. Tone-matched, not translated." },
+    { "title": "No-show winback", "body": "Auto-recovers cancellations within 24 hours into the same week." },
+    { "title": "Recall reactivation", "body": "Mines your inactive patient list. Books cleanings without manual outreach." }
+  ],
+  "testimonials": [
+    {
+      "quote": "Picked up 11 booked consults the first weekend.",
+      "author": "Dr. R. Patel",
+      "location": "Mesa, AZ",
+      "avatar": "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200&h=200&fit=crop&crop=face"
+    },
+    {
+      "quote": "Front desk got their lunch break back. That alone paid for it.",
+      "author": "Dr. M. Chen",
+      "location": "Sunnyvale, CA",
+      "avatar": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=200&h=200&fit=crop&crop=face"
+    },
+    {
+      "quote": "Reactivated 47 dormant patients in a month. We stopped paying for ads.",
+      "author": "Dr. J. Alvarez",
+      "location": "Austin, TX",
+      "avatar": "https://images.unsplash.com/photo-1629425733761-caae3b5f2e50?w=200&h=200&fit=crop&crop=face"
+    },
+    {
+      "quote": "It speaks Spanish better than half my staff. No offense to my staff.",
+      "author": "Dr. L. Ramirez",
+      "location": "Hialeah, FL",
+      "avatar": "https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=200&h=200&fit=crop&crop=face"
+    },
+    {
+      "quote": "Implant consults up 22%. The follow-up cadence is the whole game.",
+      "author": "Dr. K. Okafor",
+      "location": "Atlanta, GA",
+      "avatar": "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=200&h=200&fit=crop&crop=face"
+    },
+    {
+      "quote": "Plugged into Open Dental in an afternoon. Felt criminal.",
+      "author": "Dr. S. Lindqvist",
+      "location": "Portland, OR",
+      "avatar": "https://images.unsplash.com/photo-1611432579699-484f7990b127?w=200&h=200&fit=crop&crop=face"
+    }
+  ],
+  "pricing": [
+    {
+      "tier": "Solo",
+      "price": "$249",
+      "cadence": "/mo per location",
+      "features": ["1 PMS connection", "Voice + SMS + email", "Up to 600 leads/mo", "Standard support"],
+      "highlight": false
+    },
+    {
+      "tier": "Group",
+      "price": "$499",
+      "cadence": "/mo per location",
+      "features": ["3 PMS connections", "All channels + bilingual", "Up to 2,500 leads/mo", "Priority support", "Recall reactivation"],
+      "highlight": true
+    },
+    {
+      "tier": "DSO",
+      "price": "Custom",
+      "cadence": "annual",
+      "features": ["Unlimited locations", "Dedicated implementation lead", "BAA + custom retention", "Reporting API", "On-call SLO"],
+      "highlight": false
+    }
+  ],
+  "faq": [
+    { "q": "How long is implementation?", "a": "Most solo practices are live in 48 hours. DSOs run 2–3 weeks depending on PMS environment count." },
+    { "q": "What about HIPAA?", "a": "We sign a BAA on day one. PHI is redacted before any third-party model call. Audit logs are exportable." },
+    { "q": "Will it sound like a robot?", "a": "No. We tone-match against three of your existing recordings. Patients can request a human at any point." },
+    { "q": "What if my PMS isn't listed?", "a": "If you're on a top-15 dental PMS, we have a connector. Otherwise, we'll build the connector inside the Group tier." },
+    { "q": "How is pricing structured?", "a": "Per location, per month. No usage surprises. You can pause for slow months." },
+    { "q": "Can I keep my own number?", "a": "Yes. We port or proxy. Caller ID stays your practice." }
+  ],
+  "waitlistCTA": {
+    "title": "Be the first practice to never miss a lead.",
+    "sub": "Join the waitlist for a 14-day pilot. We'll reach out within 48 hours."
+  },
+  "posts": [
+    "Dental practices lose ~$120 every time a lead doesn't get a callback. We built the AI SDR that picks up the slack — bilingual, HIPAA-aware, PMS-native. Waitlist open.",
+    "Hot take: your front desk shouldn't be doing follow-ups at 7pm. Our AI SDR does. It books real slots, syncs to Dentrix/Open Dental, and speaks Spanish like a local.",
+    "Built an SDR for dentists. Live in 48 hours. Recovers ~30% of no-shows in week one. Waitlist link in bio. Pilot pricing for the first 50 practices."
+  ]
+}
