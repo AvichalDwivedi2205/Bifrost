@@ -1,11 +1,72 @@
 'use client';
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { demoRegistry } from '@bifrost/shared';
 import { Shell } from '@/components/ui/shell';
 import { Card, Btn, Pill } from '@/components/ui/primitives';
 import { AgentIcon } from '@/components/ui/agent-icons';
 import { Icon } from '@/components/ui/icons';
-import { AGENTS } from '@/components/ui/data';
+import TxLink from '@/components/solana/TxLink';
+
+const ROLE_COLORS: Record<string, string> = {
+  coordinator: 'oklch(0.78 0.16 180)',
+  news: 'oklch(0.78 0.14 75)',
+  market: 'oklch(0.76 0.16 245)',
+  skeptic: 'oklch(0.70 0.18 295)',
+  research: 'oklch(0.72 0.13 250)',
+  wallet_intelligence: 'oklch(0.70 0.13 210)',
+  risk: 'oklch(0.65 0.20 25)',
+  compliance: 'oklch(0.72 0.12 145)',
+  execution: 'oklch(0.80 0.14 195)',
+  verifier: 'oklch(0.72 0.14 155)',
+  planner: 'oklch(0.78 0.14 75)',
+  custom: 'oklch(0.76 0.13 320)',
+};
+
+const ROLE_REP_HISTORY: Record<string, Array<{ m: string; d: string; tone: string; t: string }>> = {
+  planner:    [
+    { m: 'Q3 Outbound Launch — RecallReady AI', d: '+3 pts', tone: 'ok', t: 'today' },
+    { m: 'Lead Enrichment Sweep · ICP Cohort 12', d: '+2 pts', tone: 'ok', t: '2d ago' },
+    { m: 'API Docs Refresh · payments-service', d: '+1 pt', tone: 'ok', t: '4d ago' },
+    { m: 'PR Review Sprint · billing-service v2.4', d: '−1 pt', tone: 'warn', t: '6d ago' },
+    { m: 'SOC 2 Quarterly Evidence Sweep', d: '+2 pts', tone: 'ok', t: '8d ago' },
+  ],
+  custom:     [
+    { m: 'Q3 Outbound Launch — RecallReady AI', d: '+2 pts', tone: 'ok', t: 'today' },
+    { m: 'Lead Enrichment Sweep · ICP Cohort 12', d: '+3 pts', tone: 'ok', t: '3d ago' },
+    { m: 'Vendor Invoice Batch Audit', d: '0', tone: 'default', t: '5d ago' },
+    { m: 'SOC 2 Quarterly Evidence Sweep', d: '+1 pt', tone: 'ok', t: '7d ago' },
+    { m: 'PR Review Sprint · billing-service v2.4', d: '+2 pts', tone: 'ok', t: '9d ago' },
+  ],
+  research:   [
+    { m: 'Lead Enrichment Sweep · ICP Cohort 12', d: '+3 pts', tone: 'ok', t: 'today' },
+    { m: 'Q3 Outbound Launch — RecallReady AI', d: '+2 pts', tone: 'ok', t: '2d ago' },
+    { m: 'Vendor Invoice Batch Audit · 18 invoices', d: '+1 pt', tone: 'ok', t: '4d ago' },
+    { m: 'API Docs Refresh · payments-service', d: '0', tone: 'default', t: '6d ago' },
+    { m: 'SOC 2 Quarterly Evidence Sweep', d: '+2 pts', tone: 'ok', t: '9d ago' },
+  ],
+  verifier:   [
+    { m: 'Q3 Outbound Launch — RecallReady AI', d: '+2 pts', tone: 'ok', t: 'today' },
+    { m: 'Vendor Invoice Batch Audit · 18 invoices', d: '+3 pts', tone: 'ok', t: '2d ago' },
+    { m: 'PR Review Sprint · billing-service v2.4', d: '−1 pt', tone: 'warn', t: '4d ago' },
+    { m: 'SOC 2 Quarterly Evidence Sweep', d: '+2 pts', tone: 'ok', t: '6d ago' },
+    { m: 'API Docs Refresh · payments-service', d: '+1 pt', tone: 'ok', t: '8d ago' },
+  ],
+  compliance: [
+    { m: 'SOC 2 Quarterly Evidence Sweep', d: '+3 pts', tone: 'ok', t: 'today' },
+    { m: 'Vendor Invoice Batch Audit · 18 invoices', d: '+2 pts', tone: 'ok', t: '3d ago' },
+    { m: 'PR Review Sprint · billing-service v2.4', d: '+1 pt', tone: 'ok', t: '5d ago' },
+    { m: 'Lead Enrichment Sweep · ICP Cohort 12', d: '0', tone: 'default', t: '8d ago' },
+    { m: 'API Docs Refresh · payments-service', d: '+2 pts', tone: 'ok', t: '10d ago' },
+  ],
+  execution:  [
+    { m: 'API Docs Refresh · payments-service', d: '+2 pts', tone: 'ok', t: 'today' },
+    { m: 'PR Review Sprint · billing-service v2.4', d: '+3 pts', tone: 'ok', t: '2d ago' },
+    { m: 'Q3 Outbound Launch — RecallReady AI', d: '−1 pt', tone: 'warn', t: '4d ago' },
+    { m: 'Vendor Invoice Batch Audit · 18 invoices', d: '+2 pts', tone: 'ok', t: '6d ago' },
+    { m: 'SOC 2 Quarterly Evidence Sweep', d: '+1 pt', tone: 'ok', t: '9d ago' },
+  ],
+};
 
 // ── Radar chart ───────────────────────────────────────────────────────────────
 
@@ -160,23 +221,22 @@ export default function ProfilePage() {
   const [copied, setCopied] = useState(false);
 
   const agentId = params?.agentId;
-  const a = AGENTS.find(ag => ag.id === agentId) ?? AGENTS[0]!;
+  const a = demoRegistry.find(ag => ag.id === agentId) ?? demoRegistry[0]!;
+  const color = ROLE_COLORS[a.role] ?? 'oklch(0.76 0.13 320)';
+  const pda = (a as any).agentRegistryPda as string | undefined;
 
-  // Trust dimensions: map agent data to 6 radar axes
-  // Use trust as a base with plausible variation per role
-  const trustBase = a.trust;
+  const trustBase = a.trustScore;
   const trustDims: RadarDim[] = [
-    { label: 'Accuracy',        value: Math.min(100, Math.round(trustBase * 1.02)) },
-    { label: 'Latency',         value: Math.min(100, Math.round(trustBase * 0.97)) },
-    { label: 'Citation',        value: Math.min(100, Math.round(trustBase * 1.01)) },
-    { label: 'Cost eff.',       value: Math.min(100, Math.round(trustBase * 0.98 + 2)) },
-    { label: 'Uptime',          value: Math.min(100, Math.round(trustBase * 1.03)) },
-    { label: 'Disputes',        value: Math.min(100, Math.round(trustBase * 0.96 + 4)) },
+    { label: 'Accuracy',  value: Math.min(100, Math.round(trustBase * 1.02)) },
+    { label: 'Latency',   value: Math.min(100, Math.round(trustBase * 0.97)) },
+    { label: 'Citation',  value: Math.min(100, Math.round(trustBase * 1.01)) },
+    { label: 'Cost eff.', value: Math.min(100, Math.round(trustBase * 0.98 + 2)) },
+    { label: 'Uptime',    value: Math.min(100, Math.round(trustBase * 1.03)) },
+    { label: 'Disputes',  value: Math.min(100, Math.round(trustBase * 0.96 + 4)) },
   ];
 
   const [td0, td1, td2, td3, td4, td5] = trustDims;
 
-  // Horizontal bars for accessibility below the radar
   const trustBarDims = [
     { label: 'Factual support',     v: td0!.value, color: 'var(--ok)' },
     { label: 'Timing accuracy',     v: td1!.value, color: 'var(--accent)' },
@@ -186,14 +246,7 @@ export default function ProfilePage() {
     { label: 'Dispute history',     v: td5!.value, color: 'var(--ok)' },
   ];
 
-  const history = [
-    { m: 'Trump Polymarket Edge Scan', d: '+2 pts', tone: 'ok',     t: 'today' },
-    { m: 'DePIN Weekly Signal Brief',  d: '+1 pt',  tone: 'ok',     t: '2d ago' },
-    { m: 'Stablecoin Depeg Playbook',  d: '+3 pts', tone: 'ok',     t: '3d ago' },
-    { m: 'NFT Floor Monitoring',       d: '0',      tone: 'default', t: '5d ago' },
-    { m: 'Ethena Counterparty Audit',  d: '−1 pt',  tone: 'warn',   t: '6d ago' },
-    { m: 'Memecoin Wash-Trade Probe',  d: '+2 pts', tone: 'ok',     t: '8d ago' },
-  ];
+  const history = ROLE_REP_HISTORY[a.role] ?? ROLE_REP_HISTORY['execution']!;
 
   const handleCopyWallet = () => {
     navigator.clipboard.writeText(a.wallet).then(() => {
@@ -205,39 +258,43 @@ export default function ProfilePage() {
   return (
     <Shell
       title={a.name}
-      subtitle={`${a.role} agent · certified`}
+      subtitle={`${a.role} agent · ${a.registrationStatus ?? 'active'}`}
     >
       {/* Hero card */}
       <Card style={{ marginBottom: 14, padding: '24px 28px', overflow: 'hidden' }}>
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 22 }}>
           <div style={{
             width: 80, height: 80, borderRadius: 20,
-            background: a.color.replace(')', ' / 0.14)'), color: a.color,
+            background: color.replace(')', ' / 0.14)'), color,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            border: `1px solid ${a.color.replace(')', ' / 0.35)')}`,
-            boxShadow: `0 0 40px -8px ${a.color.replace(')', ' / 0.4)')}`,
+            border: `1px solid ${color.replace(')', ' / 0.35)')}`,
+            boxShadow: `0 0 40px -8px ${color.replace(')', ' / 0.4)')}`,
             flexShrink: 0,
           }}>
-            <AgentIcon role={a.role} size={42} color={a.color} />
+            <AgentIcon role={a.role} size={42} color={color} />
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
               <h2 style={{ margin: 0, fontSize: 22, fontWeight: 500, letterSpacing: '-0.025em' }}>{a.name}</h2>
               <Pill tone="ok">active</Pill>
-              <Pill tone="accent" dot={false}>verifier-compatible</Pill>
+              {a.verifierCompatible && <Pill tone="accent" dot={false}>verifier-compatible</Pill>}
             </div>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 6 }}>{a.desc}</div>
-            <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: 'var(--text-dim)', flexWrap: 'wrap' }}>
-              <span>wallet · <span className="mono" style={{ color: 'var(--text-muted)' }}>{a.wallet}</span></span>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 6 }}>{a.description}</div>
+            <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: 'var(--text-dim)', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span>wallet · <span className="mono" style={{ color: 'var(--text-muted)' }}>{a.wallet.length > 12 ? `${a.wallet.slice(0, 4)}…${a.wallet.slice(-4)}` : a.wallet}</span></span>
               <span>role · <span style={{ color: 'var(--text-muted)', textTransform: 'capitalize' }}>{a.role}</span></span>
-              <span>certified · <span className="mono" style={{ color: 'var(--text-muted)' }}>v2.4.1</span></span>
+              {pda && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  registry · <TxLink signature={pda} cluster="devnet" kind="address" short />
+                </span>
+              )}
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: 28 }}>
-            <Kpi l="Missions" v={a.missions} />
-            <Kpi l="Pass rate" v="98.2%" tone="var(--ok)" />
+            <Kpi l="Missions" v={a.totalMissions} />
+            <Kpi l="Pass rate" v={`${Math.round(a.trustScore * 0.98)}%`} tone="var(--ok)" />
             <Kpi l="Avg spend" v="0.84" sub="USDC" />
-            <Kpi l="Trust" v={a.trust} tone={a.color} />
+            <Kpi l="Trust" v={a.trustScore} tone={color} />
           </div>
         </div>
       </Card>
@@ -296,11 +353,10 @@ export default function ProfilePage() {
           <Card>
             <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 14 }}>Certified capabilities</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {[
-                { name: 'news.synthesize',    v: 'v2.4.1', score: 96 },
-                { name: 'news.timeline.build', v: 'v1.8.0', score: 94 },
-                { name: 'news.source.rank',   v: 'v1.2.3', score: 91 },
-              ].map(c => (
+              {a.capabilities.slice(0, 4).map((cap, i) => {
+                const score = Math.round(trustBase - i * 2);
+                const c = { name: cap, v: `v1.${3 - i}.0`, score };
+                return (
                 <div key={c.name} style={{
                   display: 'flex', alignItems: 'center', gap: 12,
                   padding: '12px 14px', borderRadius: 10,
@@ -313,7 +369,8 @@ export default function ProfilePage() {
                   </div>
                   <Pill tone="ok">score {c.score}</Pill>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
         </div>

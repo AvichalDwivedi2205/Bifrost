@@ -9,17 +9,16 @@ import { Icon } from '@/components/ui/icons';
 import { fetchRegistry } from '@/lib/api';
 
 const DOMAINS = [
-  'news',
-  'market',
-  'skeptic',
+  'planner',
   'execution',
   'verifier',
   'research',
-  'wallet_intelligence',
-  'risk',
   'compliance',
   'custom',
   'coordinator',
+  'news',
+  'market',
+  'skeptic',
 ];
 const STATUSES = ['active', 'probation', 'submitted', 'unavailable', 'verifier'];
 const SORT_OPTIONS = [
@@ -115,14 +114,26 @@ export default function RegistryPage() {
       return domainMatch && statusMatch && (!q || haystack.includes(q.toLowerCase()));
     });
 
+    const hasPda = (a: typeof list[0]) => Boolean((a as any).agentRegistryPda);
+
     if (sortBy === 'trust_desc') {
-      list = [...list].sort((a, b) => b.trustScore - a.trustScore);
+      list = [...list].sort((a, b) => {
+        const pdaDiff = Number(hasPda(b)) - Number(hasPda(a));
+        return pdaDiff !== 0 ? pdaDiff : b.trustScore - a.trustScore;
+      });
     } else if (sortBy === 'name_asc') {
-      list = [...list].sort((a, b) => a.name.localeCompare(b.name));
+      list = [...list].sort((a, b) => {
+        const pdaDiff = Number(hasPda(b)) - Number(hasPda(a));
+        return pdaDiff !== 0 ? pdaDiff : a.name.localeCompare(b.name);
+      });
     } else if (sortBy === 'missions_desc') {
-      list = [...list].sort((a, b) => b.totalMissions - a.totalMissions);
+      list = [...list].sort((a, b) => {
+        const pdaDiff = Number(hasPda(b)) - Number(hasPda(a));
+        return pdaDiff !== 0 ? pdaDiff : b.totalMissions - a.totalMissions;
+      });
+    } else {
+      list = [...list].sort((a, b) => Number(hasPda(b)) - Number(hasPda(a)));
     }
-    // 'recent' — leave in API order
 
     return list;
   }, [agents, selectedDomains, selectedStatuses, sortBy, q]);
@@ -365,7 +376,6 @@ export default function RegistryPage() {
         {filtered.map(a => {
           const color = ROLE_COLORS[a.role] ?? 'oklch(0.76 0.13 320)';
           const currentStatus = agentStatus(a);
-          const onchainActive = Boolean(a.evaluationSummary?.latestReportId || a.trustProfile?.latestReputationTx);
           const topCategory = Object.entries(a.trustProfile?.categoryScores ?? {}).sort((left, right) => right[1] - left[1])[0];
           return (
             <Card key={a.id} onClick={() => router.push(`/agents/${a.id}`)} style={{ cursor: 'pointer', minHeight: 265 }}>
@@ -380,16 +390,13 @@ export default function RegistryPage() {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 500, letterSpacing: '-0.015em' }}>{a.name}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-dim)', textTransform: 'capitalize', marginTop: 2 }}>
-                    {a.role} · <span className="mono">{a.wallet}</span>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-dim)', textTransform: 'capitalize', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {a.role} · <span className="mono">{a.wallet.length > 12 ? `${a.wallet.slice(0, 4)}…${a.wallet.slice(-4)}` : a.wallet}</span>
                   </div>
                 </div>
                 <Pill tone={statusTone(currentStatus)}>{currentStatus}</Pill>
               </div>
               <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-                <Pill tone={onchainActive ? 'ok' : 'default'} dot={onchainActive}>
-                  {onchainActive ? 'onchain anchored' : 'offchain profile'}
-                </Pill>
                 {topCategory && (
                   <Pill tone="accent" dot={false}>
                     {topCategory[0]} · {topCategory[1]}

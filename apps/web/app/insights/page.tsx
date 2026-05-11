@@ -3,7 +3,16 @@ import React from 'react';
 import { Shell } from '@/components/ui/shell';
 import { Card } from '@/components/ui/primitives';
 import { AgentIcon } from '@/components/ui/agent-icons';
-import { AGENTS } from '@/components/ui/data';
+import { demoRegistry } from '@bifrost/shared';
+
+const ROLE_COLORS: Record<string, string> = {
+  coordinator: 'oklch(0.78 0.16 180)', news: 'oklch(0.78 0.14 75)',
+  market: 'oklch(0.76 0.16 245)', skeptic: 'oklch(0.70 0.18 295)',
+  research: 'oklch(0.72 0.13 250)', risk: 'oklch(0.65 0.20 25)',
+  compliance: 'oklch(0.72 0.12 145)', execution: 'oklch(0.80 0.14 195)',
+  verifier: 'oklch(0.72 0.14 155)', planner: 'oklch(0.78 0.14 75)',
+  custom: 'oklch(0.76 0.13 320)',
+};
 
 // ── SVG Charts ────────────────────────────────────────────────────────────────
 function ThroughputChart() {
@@ -114,7 +123,7 @@ const KPIS = [
 ];
 
 export default function InsightsPage() {
-  const topAgents = [...AGENTS].sort((a, b) => b.trust - a.trust).slice(0, 6);
+  const topAgents = [...demoRegistry].sort((a, b) => b.trustScore - a.trustScore).slice(0, 6);
 
   return (
     <Shell
@@ -211,16 +220,17 @@ export default function InsightsPage() {
                 <span className="mono" style={{ fontSize: 12, color: 'var(--text-dim)' }}>#{i + 1}</span>
                 <div style={{
                   width: 28, height: 28, borderRadius: 8,
-                  background: a.color.replace(')', ' / 0.14)'), color: a.color,
+                  background: (ROLE_COLORS[a.role] ?? 'oklch(0.76 0.13 320)').replace(')', ' / 0.14)'),
+                  color: ROLE_COLORS[a.role] ?? 'oklch(0.76 0.13 320)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <AgentIcon role={a.role} size={16} color={a.color} />
+                  <AgentIcon role={a.role} size={16} color={ROLE_COLORS[a.role] ?? 'oklch(0.76 0.13 320)'} />
                 </div>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>{a.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>{a.missions} missions</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>{a.totalMissions} missions</div>
                 </div>
-                <div style={{ fontSize: 14, fontWeight: 500, color: a.color }}>{a.trust}</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: ROLE_COLORS[a.role] ?? 'oklch(0.76 0.13 320)' }}>{a.trustScore}</div>
               </div>
             ))}
           </div>

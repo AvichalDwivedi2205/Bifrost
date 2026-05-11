@@ -577,7 +577,7 @@ function fmtPk(pk: string) {
 // ── LandingPage ────────────────────────────────────────────────────────────────
 export default function LandingPage() {
   const router = useRouter();
-  const { theme, toggle } = useTheme();
+  useTheme();
   const { connected, connecting, publicKey } = useWallet();
   const { setVisible } = useWalletModal();
   const [mounted, setMounted] = useState(false);
@@ -618,14 +618,6 @@ export default function LandingPage() {
           <a href="#docs" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>Docs</a>
         </nav>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button onClick={toggle} style={{
-            width: 34, height: 34, borderRadius: 8,
-            background: 'var(--surface)', border: '1px solid var(--hairline)',
-            color: 'var(--text-muted)', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Icon name={mounted && theme === 'light' ? 'moon' : 'sun'} size={14} />
-          </button>
           {walletAddr ? (
             <span className="mono" style={{
               fontSize: 11.5, padding: '4px 10px', borderRadius: 8,
