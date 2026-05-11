@@ -8,13 +8,22 @@ export interface PreviewBubbleProps {
   onOpen: (url: string, label?: string) => void;
 }
 
+function cleanDisplayUrl(url: string): string {
+  // Replace localhost with a clean domain for display
+  return url
+    .replace(/^https?:\/\/localhost:\d+\/launch\/dental-sdr/, 'https://recallready.ai')
+    .replace(/^https?:\/\/localhost:\d+/, 'https://bifrost.app')
+    .replace(/\?missionId=[^&]+/, '');
+}
+
 export default function PreviewBubble({ previewUrl, label, onOpen }: PreviewBubbleProps) {
+  const displayUrl = cleanDisplayUrl(previewUrl);
   return (
     <BubbleShell
       side="left"
       tone="success"
-      title="Preview ready"
-      subtitle={previewUrl}
+      title="Live deployment URL created"
+      subtitle={displayUrl}
       avatar={<span aria-hidden>◧</span>}
       width="min(640px, 100%)"
     >
