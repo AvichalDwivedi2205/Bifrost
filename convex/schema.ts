@@ -95,4 +95,16 @@ export default defineSchema({
   })
     .index("by_applicationId", ["applicationId"])
     .index("by_status", ["status"]),
+
+  waitlist: defineTable({
+    email: v.string(),
+    practiceName: v.optional(v.string()),
+    role: v.optional(v.string()),
+    source: v.string(),
+    missionId: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_email", ["email"])
+    .index("by_source", ["source"])
+    .index("by_createdAt", ["createdAt"]),
 });
