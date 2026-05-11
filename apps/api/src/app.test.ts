@@ -474,8 +474,10 @@ describe("Bifrost API", () => {
         const current = await fetchMission(app, missionId);
         if (current.mission.status === "settled") {
           expect(current.mission.receipts.length).toBe(1);
-          expect(current.mission.deliverables?.previewUrl).toInclude(`/api/missions/${missionId}/preview`);
-          expect(current.mission.deliverables?.liveUrl).toInclude(`/api/missions/${missionId}/live`);
+          expect(current.mission.deliverables?.previewUrl).toInclude(`/launch/dental-sdr`);
+          expect(current.mission.deliverables?.previewUrl).toInclude(`missionId=${missionId}`);
+          expect(current.mission.deliverables?.liveUrl).toInclude(`/launch/dental-sdr`);
+          expect(current.mission.deliverables?.liveUrl).toInclude(`missionId=${missionId}`);
           expect(current.mission.deliverables?.waitlistEndpoint).toInclude(`/api/missions/${missionId}/waitlist`);
           expect(current.mission.deliverables?.socialPosts?.length).toBe(3);
           expect(current.mission.deliverables?.fileManifest?.length).toBeGreaterThan(0);

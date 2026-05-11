@@ -3,6 +3,8 @@ import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 
 import { env } from "./env";
+import { LLMRouter } from "./providers/llm/router";
+import { registerDemoRoutes } from "./routes/demo";
 import { registerMissionRoutes } from "./routes/missions";
 import { registerRegistryRoutes } from "./routes/registry";
 import { AgentMessageBus } from "./services/agent-message-bus";
@@ -38,8 +40,11 @@ export async function createApp(options: { seedDemo?: boolean } = {}) {
   });
   await app.register(websocket);
 
+  app.get("/health", async () => ({ status: "ok", ts: Date.now() }));
+
   await registerRegistryRoutes(app, registry, registryApplications);
   await registerMissionRoutes(app, store, runner, messageBus);
+  await registerDemoRoutes(app, { store, runner, registry, registryApplications, messageBus });
   await registerMissionStream(app, store);
 
   return { app, store, runner, registry, registryApplications };
@@ -51,5 +56,21 @@ export async function startServer() {
     host: env.HOST,
     port: env.PORT,
   });
+  // Fire-and-forget LLM warm-up so the first agent call in a demo doesn't pay
+  // OpenRouter cold-start latency. Skipped when no API key is configured (mock-only).
+  if (env.OPENROUTER_API_KEY) {
+    void new LLMRouter()
+      .generateText({
+        task: "verify_mission",
+        system: "ping",
+        prompt: "ping",
+        schemaHint: "{}",
+        temperature: 0.1,
+      })
+      .then(() => app.log.info("[llm] warm-up complete"))
+      .catch((err: unknown) => {
+        app.log.warn(`[llm] warm-up skipped: ${err instanceof Error ? err.message : String(err)}`);
+      });
+  }
   return app;
 }
