@@ -15,6 +15,7 @@ export interface BifrostBubbleProps {
   chips?: BifrostChip[];
   onChipClick?: (chip: BifrostChip) => void;
   tone?: 'bifrost' | 'system' | 'success' | 'danger';
+  typing?: boolean;
 }
 
 export function BifrostBubble({
@@ -25,6 +26,7 @@ export function BifrostBubble({
   chips,
   onChipClick,
   tone = 'bifrost',
+  typing = false,
 }: BifrostBubbleProps) {
   return (
     <BubbleShell
@@ -36,7 +38,26 @@ export function BifrostBubble({
       avatar={<span aria-hidden>◇</span>}
       width="min(640px, 100%)"
     >
-      <div style={{ whiteSpace: 'pre-wrap' }}>{text}</div>
+      {typing ? (
+        <div style={{ display: 'flex', gap: 5, alignItems: 'center', padding: '4px 2px' }}>
+          {[0, 1, 2].map(i => (
+            <span key={i} style={{
+              width: 7, height: 7, borderRadius: '50%',
+              background: 'var(--accent)',
+              opacity: 0.7,
+              animation: `typingDot 1.2s ease-in-out ${i * 0.2}s infinite`,
+            }} />
+          ))}
+          <style>{`
+            @keyframes typingDot {
+              0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+              30% { transform: translateY(-6px); opacity: 1; }
+            }
+          `}</style>
+        </div>
+      ) : (
+        <div style={{ whiteSpace: 'pre-wrap' }}>{text}</div>
+      )}
       {chips && chips.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
           {chips.map((chip, idx) => (
