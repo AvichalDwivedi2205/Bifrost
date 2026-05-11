@@ -81,8 +81,8 @@ export function MissionSpendSheet({
           inset: 0,
           zIndex: 40,
           background: 'oklch(0.08 0.012 260 / 0.72)',
-          backdropFilter: 'blur(4px)',
-          WebkitBackdropFilter: 'blur(4px)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
         }}
       />
 
