@@ -124,6 +124,26 @@ export async function createMission(
   return parseMissionResponse(response);
 }
 
+export async function listMissions(): Promise<MissionRecord[]> {
+  const baseUrl = resolveApiBaseUrl();
+  if (!baseUrl) return [];
+  const response = await fetch(`${baseUrl}/api/missions`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`listMissions ${response.status}`);
+  const json = (await response.json()) as { missions: MissionRecord[] };
+  return json.missions ?? [];
+}
+
+export async function rebuildMission(missionId: string): Promise<MissionRecord> {
+  const baseUrl = resolveApiBaseUrl();
+  if (!baseUrl) throw new Error("API base URL not configured");
+  const response = await fetch(`${baseUrl}/api/missions/${missionId}/rebuild`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  return parseMissionResponse(response);
+}
+
 export async function fetchMission(missionId: string): Promise<MissionRecord> {
   const baseUrl = resolveApiBaseUrl();
   if (!baseUrl) {
