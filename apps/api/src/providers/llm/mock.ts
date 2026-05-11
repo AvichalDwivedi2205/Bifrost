@@ -224,9 +224,34 @@ function buildMockPayload(task: string, prompt: string): unknown {
       return createVerificationSummary();
     case "verify_mission_with_audit":
       return createVerificationSummary();
+    case "registry_judge_strict-correctness":
+      return createRegistryJudgePayload(prompt, "strict");
+    case "registry_judge_adversarial-skeptic":
+      return createRegistryJudgePayload(prompt, "skeptic");
     default:
       return { message: "No mock payload defined", task };
   }
+}
+
+function createRegistryJudgePayload(prompt: string, mode: "strict" | "skeptic") {
+  // Crude regex over the manifest blob in the prompt; mirrors the heuristic fallback
+  // so registry tests stay deterministic without needing a real LLM.
+  const ids = Array.from(prompt.matchAll(/"id":\s*"([^"]+)"/g)).map((m) => m[1]);
+  const weak = Array.from(prompt.matchAll(/"id":\s*"([^"]*(?:fake|unsafe)[^"]*)"/gi)).map((m) => m[1]);
+  const accepted = ids.filter((id) => id && !weak.includes(id));
+  const needsReview = mode === "skeptic" ? weak.length > 0 : weak.length > 0;
+  return {
+    verdict: needsReview ? "needs_review" : "pass",
+    score: needsReview ? (mode === "strict" ? 0.7 : 0.66) : mode === "strict" ? 0.88 : 0.86,
+    confidence: needsReview ? 0.62 : 0.82,
+    summary: needsReview
+      ? "Mock judge flagged at least one capability id matching weak-claim heuristic."
+      : "Mock judge accepted all capability claims.",
+    acceptedClaims: accepted,
+    rejectedClaims: weak,
+    reasoning:
+      "[mock-judge] Used deterministic regex over the manifest blob — no LLM provider was configured.",
+  };
 }
 
 export class MockLLMProvider implements LLMProvider {

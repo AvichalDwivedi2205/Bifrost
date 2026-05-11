@@ -7,8 +7,11 @@ const rawEnvSchema = z.object({
   PORT: z.coerce.number().default(8787),
   HOST: z.string().default("0.0.0.0"),
   API_BASE_URL: z.string().default("http://localhost:8787"),
+  WEB_BASE_URL: z.string().default("http://localhost:3000"),
+  LAUNCH_PREVIEW_PATH: z.string().default("/launch/dental-sdr"),
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_MODEL: z.string().default("google/gemini-2.5-flash"),
+  EXA_API_KEY: z.string().optional(),
   VERTEX_PROJECT_ID: z.string().optional(),
   VERTEX_LOCATION: z.string().default("us-central1"),
   VERTEX_MODEL: z.string().default("gemini-2.5-pro"),
@@ -28,6 +31,11 @@ const rawEnvSchema = z.object({
     .string()
     .optional()
     .transform((value) => value !== "false"),
+  DEMO_INJECT_REJECTION: z
+    .string()
+    .optional()
+    .default("false")
+    .transform((value) => value === "true"),
   CONVEX_URL: z.string().url().optional(),
   USE_CONVEX: z
     .string()
