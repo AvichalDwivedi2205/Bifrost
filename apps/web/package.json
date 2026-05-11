@@ -10,20 +10,27 @@
   },
   "dependencies": {
     "@bifrost/shared": "file:../../packages/shared",
+    "@react-three/drei": "^10.0.0",
+    "@react-three/fiber": "^9.0.0",
     "@solana/wallet-adapter-base": "latest",
     "@solana/wallet-adapter-react": "latest",
     "@solana/wallet-adapter-react-ui": "latest",
     "@solana/wallet-adapter-wallets": "latest",
     "@solana/web3.js": "latest",
+    "clsx": "^2.1.1",
     "convex": "^1.36.1",
+    "framer-motion": "^11.11.0",
+    "lenis": "^1.1.13",
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "three": "^0.169.0"
   },
   "devDependencies": {
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "@types/three": "^0.169.0",
     "typescript": "latest"
   }
 }

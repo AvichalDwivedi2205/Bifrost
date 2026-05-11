@@ -9,6 +9,12 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: resolve(appDir, "../.."),
   },
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "images.unsplash.com" },
+      { protocol: "https", hostname: "plus.unsplash.com" },
+    ],
+  },
   async redirects() {
     return [
       { source: '/dashboard', destination: '/missions', permanent: true },
