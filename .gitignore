@@ -1,5 +1,6 @@
 node_modules
 .next
+.vercel
 dist
 coverage
 .env
@@ -19,6 +20,13 @@ yarn.lock
 
 # Local Solana harness artifacts (may contain keypairs/state)
 program/.bifrost-local/
+
+# Surfpool local simnet logs and state
+.surfpool/
+
+# Seed-script artifacts (keypairs + per-agent PDAs/sigs)
+scripts/.seed-keys/
+scripts/.seed-output.json
 
 # Notes / exports
 BiFrost Export.html
