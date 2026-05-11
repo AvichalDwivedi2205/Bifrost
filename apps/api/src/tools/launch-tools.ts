@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import type {
   LaunchMissionConfig,
   MissionDeliverables,
@@ -5,6 +8,12 @@ import type {
   MissionRecord,
 } from "@bifrost/shared";
 import { MissionWorkspace } from "../services/workspace/mission-workspace";
+import { searchExa, ExaError, type ExaResult } from "./exa-client";
+import type { LaunchScoutAgent, ScoutBrief } from "../agents/launch-scout-agent";
+import type {
+  LandingPageCopy,
+  LaunchCopywriterAgent,
+} from "../agents/launch-copywriter-agent";
 
 export interface LaunchArtifacts {
   research?: {
@@ -12,7 +21,13 @@ export interface LaunchArtifacts {
     competitors: string[];
     messagingPatterns: string[];
     artifactRef: string;
+    sources?: Array<{ title: string; url: string; snippet: string; publishedDate?: string }>;
+    promises?: string[];
+    objections?: string[];
+    fallback?: "template" | "llm";
   };
+  landingContent?: LandingPageContentForApi;
+  disputeRerun?: boolean;
   positioning?: {
     options: string[];
     artifactRef: string;
@@ -83,6 +98,66 @@ export function researchLaunchMarket(record: MissionRecord): NonNullable<LaunchA
     competitors,
     messagingPatterns,
     artifactRef: `workspace://${record.id}/research.md`,
+    fallback: "template",
+  };
+}
+
+/**
+ * Real-LLM scout: runs Exa web searches for competitors, CTA patterns, and trust objections,
+ * then synthesizes via OpenRouter through LaunchScoutAgent. Falls back to the deterministic
+ * template if any step fails (Exa rate-limit, LLM JSON parse, etc.).
+ */
+export async function researchLaunchMarketLLM(
+  record: MissionRecord,
+  scout: LaunchScoutAgent,
+): Promise<NonNullable<LaunchArtifacts["research"]>> {
+  const config = getLaunchConfig(record);
+  const queries: Record<string, string> = {
+    competitors: `${config.targetAudience} ${config.oneLineIdea} competitors landing pages`,
+    cta_patterns: `SaaS landing page CTA copy waitlist book demo for ${config.targetAudience}`,
+    trust_objections: `${config.targetAudience} buyer objections AI software adoption hesitation`,
+  };
+
+  const exaResults: Record<string, ExaResult[]> = {};
+  let anyExaSuccess = false;
+  for (const [label, query] of Object.entries(queries)) {
+    try {
+      const rows = await searchExa(query, { numResults: 5, type: "auto" });
+      exaResults[label] = rows;
+      if (rows.length > 0) anyExaSuccess = true;
+    } catch (err) {
+      const reason = err instanceof ExaError ? err.message : String(err);
+      console.warn(`[launch-scout] Exa query "${label}" failed: ${reason}`);
+      exaResults[label] = [];
+    }
+  }
+
+  if (!anyExaSuccess) {
+    throw new Error("All Exa queries returned zero results — falling back to template scout");
+  }
+
+  const brief: ScoutBrief = await scout.execute({
+    productName: config.productName,
+    oneLineIdea: config.oneLineIdea,
+    targetAudience: config.targetAudience,
+    brandTone: config.brandTone,
+    exaResults,
+  });
+
+  const competitors = brief.competitors
+    .map((c) => (c.url ? `${c.name} — ${c.angle}` : `${c.name} — ${c.angle}`))
+    .slice(0, 6);
+  const messagingPatterns = [...brief.promises.slice(0, 4), ...brief.ctaPatterns.slice(0, 2)].slice(0, 6);
+
+  return {
+    summary: brief.summary,
+    competitors,
+    messagingPatterns,
+    sources: brief.sources,
+    promises: brief.promises,
+    objections: brief.objections,
+    artifactRef: `workspace://${record.id}/research.md`,
+    fallback: "llm",
   };
 }
 
@@ -99,6 +174,119 @@ export function synthesizePositioning(
     ],
     artifactRef: research.artifactRef.replace("research.md", "positioning.json"),
   };
+}
+
+/**
+ * Full LaunchPageContent shape consumed by apps/web/app/launch/dental-sdr/page.tsx.
+ * Mirrors apps/web/app/launch/dental-sdr/types.ts but kept loose for forward-compat
+ * (the web side does shallow-spread merge with default.json).
+ */
+export interface LandingPageContentForApi extends LandingPageCopy {
+  hero: LandingPageCopy["hero"] & { sideImage?: string };
+  howItWorks: LandingPageCopy["howItWorks"] & {
+    frames: Array<{ label: string; body: string; image?: string }>;
+  };
+  testimonials: Array<{ quote: string; author: string; location: string; avatar?: string }>;
+}
+
+interface DefaultLandingShape extends LandingPageContentForApi {}
+
+let cachedDefault: DefaultLandingShape | null = null;
+function loadDefaultLandingContent(): DefaultLandingShape {
+  if (cachedDefault) return cachedDefault;
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const path = resolve(here, "../../../web/app/launch/dental-sdr/default.json");
+    const raw = readFileSync(path, "utf8");
+    cachedDefault = JSON.parse(raw) as DefaultLandingShape;
+  } catch (err) {
+    console.warn(
+      `[launch-tools] could not load web/default.json — image stitching disabled: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    cachedDefault = {
+      positioning: "solo",
+      hero: { eyebrow: "", h1: "", sub: "", ctaPrimary: "", ctaSecondary: "" },
+      problem: { title: "", stats: [] },
+      howItWorks: { title: "", subtitle: "", frames: [] },
+      features: [],
+      testimonials: [],
+      pricing: [],
+      faq: [],
+      waitlistCTA: { title: "", sub: "" },
+      posts: [],
+    };
+  }
+  return cachedDefault;
+}
+
+/**
+ * Stitch image URLs from the committed default landing JSON onto the LLM's copy
+ * by index. Preserves hero.sideImage, howItWorks.frames[i].image, testimonials[i].avatar
+ * so mission-bound previews look fully populated even though the LLM doesn't emit URLs.
+ */
+function stitchLandingImages(copy: LandingPageCopy): LandingPageContentForApi {
+  const def = loadDefaultLandingContent();
+  return {
+    ...copy,
+    hero: { ...copy.hero, sideImage: def.hero.sideImage },
+    howItWorks: {
+      ...copy.howItWorks,
+      frames: copy.howItWorks.frames.map((frame, idx) => ({
+        ...frame,
+        image: def.howItWorks.frames[idx]?.image,
+      })),
+    },
+    testimonials: copy.testimonials.map((t, idx) => ({
+      ...t,
+      avatar: def.testimonials[idx]?.avatar,
+    })),
+  };
+}
+
+/** Adapt LLM landing copy to the legacy LaunchArtifacts.copy shape (still consumed
+ *  by Verifier checks + Builder index.html generation). */
+function landingCopyToLegacy(
+  record: MissionRecord,
+  copy: LandingPageCopy,
+  primaryCTA: string,
+): NonNullable<LaunchArtifacts["copy"]> {
+  return {
+    hero: copy.hero.h1,
+    subhead: copy.hero.sub,
+    sections: copy.howItWorks.frames.map((frame) => ({ heading: frame.label, body: frame.body })),
+    faq: copy.faq.map((row) => ({ question: row.q, answer: row.a })),
+    cta: copy.hero.ctaPrimary || primaryCTA,
+    artifactRef: `workspace://${record.id}/site/copy.json`,
+  };
+}
+
+/**
+ * Real-LLM copywriter: calls LaunchCopywriterAgent with the scout brief +
+ * selected positioning direction, stitches default image URLs back in, and
+ * returns BOTH the legacy `copy` shape (for backward-compat with verifier/builder)
+ * AND the full `landingContent` shape consumed by the dental-sdr page.
+ */
+export async function writeLaunchCopyLLM(
+  record: MissionRecord,
+  selectedDirection: string,
+  copywriter: LaunchCopywriterAgent,
+  scoutBrief?: ScoutBrief,
+): Promise<{ copy: NonNullable<LaunchArtifacts["copy"]>; landingContent: LandingPageContentForApi }> {
+  const config = getLaunchConfig(record);
+  const llmCopy = await copywriter.execute({
+    productName: config.productName,
+    oneLineIdea: config.oneLineIdea,
+    targetAudience: config.targetAudience,
+    brandTone: config.brandTone,
+    primaryCTA: config.primaryCTA,
+    selectedDirection,
+    scoutBrief,
+  });
+  const landingContent = stitchLandingImages(llmCopy);
+  const legacyCopy = landingCopyToLegacy(record, llmCopy, config.primaryCTA);
+  return { copy: legacyCopy, landingContent };
 }
 
 export function writeLaunchCopy(
@@ -176,17 +364,108 @@ export async function generateLaunchSite(
 export async function deployPreview(
   record: MissionRecord,
   apiBaseUrl: string,
+  options: { webBaseUrl?: string; launchPath?: string } = {},
 ): Promise<Required<Pick<MissionDeliverables, "previewUrl" | "waitlistEndpoint" | "screenshots">>> {
   const workspace = new MissionWorkspace(record.id);
   await workspace.writeText(
     "screenshots/mobile-preview.txt",
     `Mobile screenshot placeholder for ${record.input.title} at ${new Date().toISOString()}`,
   );
+  const webBase = options.webBaseUrl ?? process.env.WEB_BASE_URL ?? "http://localhost:3000";
+  const launchPath = options.launchPath ?? process.env.LAUNCH_PREVIEW_PATH ?? "/launch/dental-sdr";
+  const previewUrl = `${webBase.replace(/\/$/, "")}${launchPath}?missionId=${encodeURIComponent(record.id)}`;
   return {
-    previewUrl: `${apiBaseUrl}/api/missions/${record.id}/preview`,
+    previewUrl,
     waitlistEndpoint: `${apiBaseUrl}/api/missions/${record.id}/waitlist`,
     screenshots: [`workspace://${record.id}/screenshots/mobile-preview.txt`],
   };
+}
+
+export interface LivePreviewVerification {
+  reachable: boolean;
+  httpStatus?: number;
+  durationMs: number;
+  hasWaitlistForm: boolean;
+  hasMissionMeta: boolean;
+  missionMetaMatches?: boolean;
+  hasHeroH1: boolean;
+  heroSnippet?: string;
+  title?: string;
+  fallbackReason?: string;
+}
+
+/**
+ * Live HTTP fetch of the deployed preview URL; regex-extracts marker attributes
+ * the Builder/Verifier contract requires. Returns structured booleans + a snippet
+ * so the Verifier can grade real DOM, not just mission state shape.
+ */
+export async function verifyLaunchPreviewLive(
+  record: MissionRecord,
+  previewUrl: string,
+  options: { timeoutMs?: number } = {},
+): Promise<LivePreviewVerification> {
+  const timeoutMs = options.timeoutMs ?? 5000;
+  const start = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(previewUrl, {
+      method: "GET",
+      headers: { "user-agent": "Bifrost-Verifier/1.0" },
+      signal: controller.signal,
+    });
+    const body = await response.text();
+    const durationMs = Date.now() - start;
+    if (!response.ok) {
+      return {
+        reachable: true,
+        httpStatus: response.status,
+        durationMs,
+        hasWaitlistForm: false,
+        hasMissionMeta: false,
+        hasHeroH1: false,
+        fallbackReason: `non-2xx status ${response.status}`,
+      };
+    }
+    const hasWaitlistForm =
+      /<form[^>]*data-bifrost\s*=\s*["']waitlist["']/i.test(body) ||
+      /data-bifrost\s*=\s*["']waitlist["']/i.test(body);
+    const metaMatch = body.match(/<meta[^>]*name\s*=\s*["']bifrost-mission-id["'][^>]*content\s*=\s*["']([^"']+)["']/i);
+    const hasMissionMeta = Boolean(metaMatch);
+    const missionMetaMatches = metaMatch ? metaMatch[1] === record.id : undefined;
+    const titleMatch = body.match(/<title>([^<]*)<\/title>/i);
+    const h1Match = body.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+    const hasHeroH1 = Boolean(h1Match && h1Match[1] && h1Match[1].replace(/<[^>]+>/g, "").trim().length > 0);
+    const heroSnippet = h1Match?.[1]?.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().slice(0, 160);
+    return {
+      reachable: true,
+      httpStatus: response.status,
+      durationMs,
+      hasWaitlistForm,
+      hasMissionMeta,
+      missionMetaMatches,
+      hasHeroH1,
+      heroSnippet,
+      title: titleMatch?.[1]?.trim().slice(0, 160),
+    };
+  } catch (err) {
+    const reason =
+      err instanceof Error
+        ? err.name === "AbortError"
+          ? `timeout after ${timeoutMs}ms`
+          : err.message
+        : String(err);
+    return {
+      reachable: false,
+      durationMs: Date.now() - start,
+      hasWaitlistForm: false,
+      hasMissionMeta: false,
+      hasHeroH1: false,
+      fallbackReason: reason,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export function searchDomains(record: MissionRecord): NonNullable<MissionDeliverables["domainOptions"]> {
@@ -199,11 +478,18 @@ export function searchDomains(record: MissionRecord): NonNullable<MissionDeliver
   ].filter((candidate) => candidate.priceUsd <= config.domainBudgetCap);
 }
 
-export function deployLive(record: MissionRecord, apiBaseUrl: string): NonNullable<MissionDeliverables["deployReceipt"]> {
+export function deployLive(
+  record: MissionRecord,
+  apiBaseUrl: string,
+  options: { webBaseUrl?: string; launchPath?: string } = {},
+): NonNullable<MissionDeliverables["deployReceipt"]> {
+  const webBase = options.webBaseUrl ?? process.env.WEB_BASE_URL ?? "http://localhost:3000";
+  const launchPath = options.launchPath ?? process.env.LAUNCH_PREVIEW_PATH ?? "/launch/dental-sdr";
+  const url = `${webBase.replace(/\/$/, "")}${launchPath}?missionId=${encodeURIComponent(record.id)}&mode=live`;
   return {
     provider: "bifrost-local-deploy",
     deploymentId: `deploy_${record.id}`,
-    url: `${apiBaseUrl}/api/missions/${record.id}/live`,
+    url,
     createdAt: new Date().toISOString(),
   };
 }
