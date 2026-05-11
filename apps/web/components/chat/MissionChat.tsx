@@ -51,6 +51,7 @@ interface ChatState {
   mission: MissionRecord | null;
   messages: AgentMessage[];
   intake: IntakeState;
+  intakeTyping: boolean;
   openSlideOver: { kind: 'team' | 'spend' | 'dispute' | null; payload?: { approvalId?: string } };
   openModal: { kind: 'preview' | null; previewUrl?: string; label?: string };
   walletPending: boolean;
@@ -67,15 +68,16 @@ export default function MissionChat({ mode, missionId }: MissionChatProps) {
   const router = useRouter();
   const wallet = useWallet();
   const walletModal = useWalletModal();
-  const [state, setState] = useState<ChatState>({
+  const [state, setState] = useState<ChatState>(() => ({
     mission: null,
     messages: [],
-    intake: initialIntake(),
+    intake: mode === 'intake' ? { ...initialIntake(), history: [] } : initialIntake(),
+    intakeTyping: mode === 'intake',
     openSlideOver: { kind: null },
     openModal: { kind: null },
     walletPending: false,
     actionError: null,
-  });
+  }));
   const patch = useCallback((partial: Partial<ChatState>) => {
     setState((prev) => ({ ...prev, ...partial }));
   }, []);
@@ -90,11 +92,22 @@ export default function MissionChat({ mode, missionId }: MissionChatProps) {
     };
   }, []);
 
-  // Hydrate intake from localStorage on mount (intake mode only).
+  // Show initial Bifrost greeting after typing delay on first load.
   useEffect(() => {
     if (mode !== 'intake') return;
     const stored = loadIntake();
-    if (stored) patch({ intake: stored });
+    if (stored) {
+      // Resuming saved intake — show immediately, no typing delay
+      patch({ intake: stored, intakeTyping: false });
+      return;
+    }
+    // Fresh start — show typing dots, then reveal greeting
+    const t = setTimeout(() => {
+      if (!cancelledRef.current) {
+        patch({ intake: initialIntake(), intakeTyping: false });
+      }
+    }, 1200);
+    return () => clearTimeout(t);
   }, [mode, patch]);
 
   // WS + initial fetch for live mode.
@@ -131,14 +144,19 @@ export default function MissionChat({ mode, missionId }: MissionChatProps) {
   // ---------- Intake flow ----------
   const onIntakeSubmit = useCallback(
     async (text: string) => {
-      const advanced = intakeNext(state.intake, text);
-      if (advanced.state.step !== 'ready') {
-        patch({ intake: advanced.state });
-        saveIntake(advanced.state);
+      // Push user message immediately, show typing indicator, delay Bifrost reply
+      const withUser = intakeNext(state.intake, text);
+      if (withUser.state.step !== 'ready') {
+        patch({ intakeTyping: true });
+        // Show Bifrost reply after realistic delay (900-1400ms)
+        const delay = 900 + Math.random() * 500;
+        await new Promise(res => setTimeout(res, delay));
+        patch({ intake: withUser.state, intakeTyping: false });
+        saveIntake(withUser.state);
         return;
       }
-      patch({ intake: advanced.state });
-      saveIntake(advanced.state);
+      patch({ intake: withUser.state, intakeTyping: false });
+      saveIntake(withUser.state);
       // ready -> create mission
       if (!wallet.publicKey || !wallet.signMessage) {
         walletModal.setVisible(true);
@@ -147,7 +165,7 @@ export default function MissionChat({ mode, missionId }: MissionChatProps) {
       patch({ walletPending: true, actionError: null });
       try {
         const issuedAt = new Date().toISOString();
-        const input: MissionInput = intakeToMissionInput(advanced.state, wallet.publicKey.toBase58());
+        const input: MissionInput = intakeToMissionInput(withUser.state, wallet.publicKey.toBase58());
         const message = buildMissionAuthorizationMessage(input, issuedAt);
         const sigBytes = await wallet.signMessage(new TextEncoder().encode(message));
         const created = await createMission(input, { issuedAt, signature: encodeSig(sigBytes) });
@@ -348,6 +366,7 @@ export default function MissionChat({ mode, missionId }: MissionChatProps) {
             mission={state.mission}
             bubbles={bubbles}
             intake={state.intake}
+            intakeTyping={state.intakeTyping}
             mode={mode}
             walletPending={state.walletPending}
             onChipClick={onChipClick}
