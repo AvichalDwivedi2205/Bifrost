@@ -49,11 +49,14 @@ export function PaymentRequestCard({
   onReject,
 }: PaymentRequestCardProps) {
   const [localError, setLocalError] = useState<string | null>(null);
+  const [approvedFlash, setApprovedFlash] = useState(false);
 
   const handleApprove = async () => {
     setLocalError(null);
     try {
       await onApprove();
+      setApprovedFlash(true);
+      window.setTimeout(() => setApprovedFlash(false), 700);
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : 'Approval failed');
     }
@@ -269,6 +272,12 @@ export function PaymentRequestCard({
             onClick={handleApprove}
             style={{
               opacity: isLoading ? 0.7 : 1,
+              animation: approvedFlash
+                ? 'ring-burst 0.7s var(--ease) forwards, ok-flash 0.7s var(--ease) forwards'
+                : isApproving
+                  ? undefined
+                  : 'ring-pulse 1.6s ease-in-out infinite',
+              borderRadius: 10,
             }}
           >
             {isApproving ? (
