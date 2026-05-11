@@ -24,6 +24,8 @@ import { nanoid } from "nanoid";
 
 import { env } from "../env";
 import { ExecutionAgent, type ExecutionOutput } from "../agents/execution-agent";
+import { LaunchCopywriterAgent } from "../agents/launch-copywriter-agent";
+import { LaunchScoutAgent } from "../agents/launch-scout-agent";
 import { MarketAgent, type MarketOutput } from "../agents/market-agent";
 import { NewsAgent, type NewsOutput } from "../agents/news-agent";
 import { SkepticAgent, type SkepticOutput } from "../agents/skeptic-agent";
@@ -42,14 +44,20 @@ import {
   generateSocialPosts,
   getLaunchConfig,
   researchLaunchMarket,
+  researchLaunchMarketLLM,
   searchDomains,
   synthesizePositioning,
   verifyLaunchDeliverables,
+  verifyLaunchPreviewLive,
   writeLaunchCopy,
+  writeLaunchCopyLLM,
+  type LandingPageContentForApi,
   type LaunchArtifacts,
 } from "../tools/launch-tools";
 
 export const WALLET_AUDIT_TEMPLATE = "wallet-audit-v1";
+
+const sleep = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
 
 const DEFAULT_SELECTION_AGENT_IDS = [
   "trump-news-1",
@@ -110,6 +118,8 @@ export class MissionRunner {
   private readonly skeptic = new SkepticAgent(this.llm);
   private readonly execution = new ExecutionAgent(this.llm);
   private readonly verifier = new VerifierAgent(this.llm);
+  private readonly launchScout = new LaunchScoutAgent(this.llm);
+  private readonly launchCopywriter = new LaunchCopywriterAgent(this.llm);
   readonly messageBus: AgentMessageBus;
 
   constructor(
@@ -123,6 +133,17 @@ export class MissionRunner {
 
   getRegistry() {
     return this.registry.list();
+  }
+
+  /**
+   * Clears in-memory runner state so a fresh demo can replay cleanly.
+   * Used by POST /api/demo/reset between demo runs — without this, artifacts
+   * like `launch.disputeRerun=true` survive store.reset() and break the
+   * DEMO_INJECT_REJECTION theatre on the second mission.
+   */
+  reset(): void {
+    this.artifacts.clear();
+    this.inFlightRuns.clear();
   }
 
   public getArtifacts(missionId: string): MissionArtifacts | undefined {
@@ -759,19 +780,43 @@ export class MissionRunner {
     const agent = this.mustGetTaskAgent(record, task.id);
     this.startTask(missionId, task.id, agent.id, `${agent.name} is mapping dental AI SDR competitors`);
     this.startAgentPhase(missionId, agent.id, "collect_context", "Collecting competitor and messaging patterns");
-    const research = researchLaunchMarket(record);
+    await sleep(2800 + Math.random() * 1400);
+
+    let research: NonNullable<LaunchArtifacts["research"]>;
+    try {
+      research = await researchLaunchMarketLLM(record, this.launchScout);
+    } catch (err) {
+      console.warn(
+        `[launch-scout] LLM/Exa scout failed for mission ${missionId}: ${
+          err instanceof Error ? err.message : String(err)
+        } — falling back to template`,
+      );
+      research = researchLaunchMarket(record);
+    }
+
+    const sourceCount = research.sources?.length ?? 0;
+    const detailLines = [
+      research.summary,
+      sourceCount > 0
+        ? `Cited ${sourceCount} live sources via Exa.`
+        : "Used deterministic template (no live sources).",
+    ];
+
     this.recordAgentWork(missionId, {
       agentId: agent.id,
       taskId: task.id,
       phaseId: "collect_context",
       kind: "tool_call",
-      title: "Competitor scout ran launch research",
-      detail: "Mapped dental AI SDR competitors, landing page promises, CTA patterns, and trust objections.",
-      toolName: "web-research.launch-market",
+      title:
+        research.fallback === "llm"
+          ? "Competitor scout ran live web research (Exa + LLM)"
+          : "Competitor scout ran launch research (template)",
+      detail: detailLines.join(" "),
+      toolName: research.fallback === "llm" ? "web-research.exa-llm" : "web-research.launch-market",
       inputSummary: getLaunchConfig(record).targetAudience,
-      outputSummary: `${research.competitors.length} competitors, ${research.messagingPatterns.length} messaging patterns`,
-      artifactRefs: [research.artifactRef],
-      confidence: 0.88,
+      outputSummary: `${research.competitors.length} competitors, ${research.messagingPatterns.length} messaging patterns, ${sourceCount} sources`,
+      artifactRefs: [research.artifactRef, ...(research.sources?.map((s) => s.url) ?? [])].slice(0, 8),
+      confidence: research.fallback === "llm" ? 0.92 : 0.78,
     });
     this.artifacts.set(missionId, {
       ...this.artifacts.get(missionId),
@@ -793,6 +838,7 @@ export class MissionRunner {
 
     this.startTask(missionId, task.id, agent.id, `${agent.name} is drafting positioning options`);
     this.startAgentPhase(missionId, agent.id, "research_to_angles", "Turning research into three launch angles");
+    await sleep(2200 + Math.random() * 1000);
     const positioning = synthesizePositioning(record, research);
     this.recordAgentWork(missionId, {
       agentId: agent.id,
@@ -843,19 +889,61 @@ export class MissionRunner {
 
     this.startTask(missionId, task.id, agent.id, `${agent.name} is drafting launch page copy`);
     this.startAgentPhase(missionId, agent.id, "draft_page_copy", "Writing hero, sections, CTA, and FAQ");
-    const copy = writeLaunchCopy(record, selectedDirection);
+    await sleep(3500 + Math.random() * 1500);
+
+    const scoutBrief = (() => {
+      const sources = this.artifacts.get(missionId)?.launch?.research?.sources;
+      const promises = this.artifacts.get(missionId)?.launch?.research?.promises;
+      const objections = this.artifacts.get(missionId)?.launch?.research?.objections;
+      if (!sources && !promises && !objections) return undefined;
+      return {
+        summary: this.artifacts.get(missionId)?.launch?.research?.summary ?? "",
+        competitors: (this.artifacts.get(missionId)?.launch?.research?.competitors ?? []).map((c) => ({
+          name: c.split(" — ")[0] ?? c,
+          angle: c.split(" — ")[1] ?? "",
+        })),
+        promises: promises ?? [],
+        objections: objections ?? [],
+        ctaPatterns: [],
+        sources: sources ?? [],
+      };
+    })();
+
+    let copy: NonNullable<LaunchArtifacts["copy"]>;
+    let landingContent: LandingPageContentForApi | undefined;
+    let copyMode: "llm" | "template" = "template";
+    try {
+      const result = await writeLaunchCopyLLM(record, selectedDirection, this.launchCopywriter, scoutBrief);
+      copy = result.copy;
+      landingContent = result.landingContent;
+      copyMode = "llm";
+    } catch (err) {
+      console.warn(
+        `[launch-copywriter] LLM copy failed for mission ${missionId}: ${
+          err instanceof Error ? err.message : String(err)
+        } — falling back to template`,
+      );
+      copy = writeLaunchCopy(record, selectedDirection);
+    }
+
     this.recordAgentWork(missionId, {
       agentId: agent.id,
       taskId: task.id,
       phaseId: "draft_page_copy",
       kind: "artifact",
-      title: "Copywriter drafted conversion page copy",
-      detail: "Wrote hero, CTA, section narrative, FAQ, and dental-practice objection handling from the chosen direction.",
-      toolName: "copy.synthesis",
+      title:
+        copyMode === "llm"
+          ? "Copywriter generated conversion page copy (LLM)"
+          : "Copywriter drafted conversion page copy (template)",
+      detail:
+        copyMode === "llm"
+          ? "LLM authored hero, problem stats, how-it-works, features, testimonials, pricing, FAQ, and 3 launch posts grounded in the scout brief and selected direction."
+          : "Wrote hero, CTA, section narrative, FAQ, and dental-practice objection handling from the chosen direction.",
+      toolName: copyMode === "llm" ? "copy.llm-synthesis" : "copy.synthesis",
       inputSummary: selectedDirection,
       outputSummary: `${copy.hero} / ${copy.sections.length} sections / ${copy.faq.length} FAQs`,
       artifactRefs: [copy.artifactRef],
-      confidence: 0.9,
+      confidence: copyMode === "llm" ? 0.94 : 0.9,
     });
     this.artifacts.set(missionId, {
       ...this.artifacts.get(missionId),
@@ -863,6 +951,7 @@ export class MissionRunner {
         ...this.artifacts.get(missionId)?.launch,
         selectedDirection,
         copy,
+        ...(landingContent ? { landingContent } : {}),
       },
     });
     await this.saveArtifacts(missionId);
@@ -881,6 +970,7 @@ export class MissionRunner {
 
     this.startTask(missionId, task.id, agent.id, `${agent.name} is generating landing page files`);
     this.startAgentPhase(missionId, agent.id, "build_site", "Writing responsive page, styles, metadata, and waitlist hook");
+    await sleep(2000 + Math.random() * 1000);
     const site = await generateLaunchSite(record, copy);
     this.recordAgentWork(missionId, {
       agentId: agent.id,
@@ -927,6 +1017,7 @@ export class MissionRunner {
     const agent = this.mustGetTaskAgent(record, task.id);
     this.startTask(missionId, task.id, agent.id, `${agent.name} is creating a preview URL`);
     this.startAgentPhase(missionId, agent.id, "preview_deploy", "Deploying preview and capturing artifact references");
+    await sleep(1800 + Math.random() * 800);
     const preview = await deployPreview(record, env.API_BASE_URL);
     this.recordAgentWork(missionId, {
       agentId: agent.id,
@@ -981,34 +1072,208 @@ export class MissionRunner {
     const agent = this.mustGetTaskAgent(record, task.id);
     this.startTask(missionId, task.id, agent.id, `${agent.name} is checking preview quality`);
     this.startAgentPhase(missionId, agent.id, "check_artifacts", "Checking page load, CTA, mobile artifact, and waitlist endpoint");
+    await sleep(2500 + Math.random() * 1000);
+
+    const previewUrl = record.deliverables?.previewUrl;
+    let live: Awaited<ReturnType<typeof verifyLaunchPreviewLive>> | undefined;
+    if (previewUrl) {
+      try {
+        live = await verifyLaunchPreviewLive(record, previewUrl);
+      } catch (err) {
+        console.warn(
+          `[verifier] live preview fetch threw for ${missionId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+
+    // Demo theatre: on first verification pass, simulate a missing waitlist marker
+    // so the dispute → Rebuild → second-pass beat is observable. Cleared on rebuild.
+    const isDisputeRerun = Boolean(this.artifacts.get(missionId)?.launch?.disputeRerun);
+    const injectFailure = env.DEMO_INJECT_REJECTION && !isDisputeRerun;
+    if (injectFailure && live) {
+      live = { ...live, hasWaitlistForm: false, fallbackReason: "Demo: simulated waitlist marker omission" };
+    }
+
+    type VerificationStatus = "passed" | "failed" | "pending";
+    const checkStatus = (
+      cond: boolean,
+      passDetail: string,
+      failDetail: string,
+      missingDetail: string,
+    ): { status: VerificationStatus; detail: string } => {
+      // Treat unreachable preview as `pending` (closest legal mapping for "inconclusive")
+      if (!live || !live.reachable) return { status: "pending", detail: missingDetail };
+      return cond ? { status: "passed", detail: passDetail } : { status: "failed", detail: failDetail };
+    };
+
+    const previewLoads: { status: VerificationStatus; detail: string } = !live
+      ? { status: "pending", detail: "Preview URL not yet emitted by deployer" }
+      : live.reachable && live.httpStatus && live.httpStatus < 400
+        ? {
+            status: "passed",
+            detail: `${previewUrl} returned ${live.httpStatus} in ${live.durationMs}ms`,
+          }
+        : {
+            status: "failed",
+            detail: `Preview unreachable: ${live.fallbackReason ?? `status ${live.httpStatus ?? "?"}`}`,
+          };
+
+    const waitlistFormCheck = checkStatus(
+      Boolean(live?.hasWaitlistForm),
+      "Found <form data-bifrost=\"waitlist\"> on page",
+      "Required form data-bifrost=\"waitlist\" not found in HTML",
+      "Preview unreachable; cannot inspect waitlist form",
+    );
+    const missionMetaCheck = checkStatus(
+      Boolean(live?.hasMissionMeta && live?.missionMetaMatches),
+      `meta name=\"bifrost-mission-id\" matches ${record.id}`,
+      live?.hasMissionMeta
+        ? `meta bifrost-mission-id present but didn't match expected mission id`
+        : `meta name=\"bifrost-mission-id\" not found`,
+      "Preview unreachable; cannot inspect bifrost-mission-id meta",
+    );
+    const heroCheck = checkStatus(
+      Boolean(live?.hasHeroH1),
+      `Hero <h1> rendered: "${live?.heroSnippet ?? ""}"`,
+      "Hero <h1> missing or empty in returned HTML",
+      "Preview unreachable; cannot inspect hero",
+    );
+
+    const passed =
+      previewLoads.status === "passed" &&
+      waitlistFormCheck.status === "passed" &&
+      missionMetaCheck.status === "passed" &&
+      heroCheck.status === "passed";
+
     this.store.mutate(missionId, (current) => ({
       ...current,
       deliverables: {
         ...(current.deliverables ?? {}),
         formTestResult: {
-          passed: true,
-          detail: "Waitlist endpoint accepted synthetic verifier submission",
+          passed: waitlistFormCheck.status === "passed",
+          detail:
+            waitlistFormCheck.status === "passed"
+              ? `Live HTTP fetch confirmed waitlist form (status ${live?.httpStatus})`
+              : waitlistFormCheck.detail,
           submittedAt: new Date().toISOString(),
         },
       },
       verificationChecks: [
         ...current.verificationChecks,
-        {
-          id: "preview_loads",
-          label: "Preview loads",
-          status: "passed",
-          detail: current.deliverables?.previewUrl ?? "Preview URL recorded",
-        },
-        {
-          id: "waitlist_form",
-          label: "Waitlist form accepts submission",
-          status: "passed",
-          detail: "Synthetic verifier submission accepted",
-        },
+        { id: "preview_loads", label: "Preview loads", ...previewLoads },
+        { id: "waitlist_form", label: "Waitlist form present", ...waitlistFormCheck },
+        { id: "mission_meta", label: "bifrost-mission-id meta tag", ...missionMetaCheck },
+        { id: "hero_h1", label: "Hero <h1> rendered", ...heroCheck },
       ],
     }));
-    this.completeAgentPhase(missionId, agent.id, "check_artifacts", "Preview checks passed");
-    this.completeTask(missionId, task.id, agent.id, "preview-checks", "Preview verified");
+
+    const livenessKnown = Boolean(live?.reachable);
+    const hardFailure =
+      livenessKnown &&
+      (waitlistFormCheck.status === "failed" ||
+        missionMetaCheck.status === "failed" ||
+        previewLoads.status === "failed");
+
+    if (hardFailure) {
+      this.failAgentPhase(
+        missionId,
+        agent.id,
+        "check_artifacts",
+        injectFailure
+          ? "Verifier flagged a missing waitlist form element. Operator can rebuild for free."
+          : "Verifier flagged required markers missing. Operator can rebuild for free.",
+      );
+      this.store.mutate(missionId, (current) => ({
+        ...current,
+        status: "failed",
+        failureReason: injectFailure
+          ? "Preview missing waitlist form element. Rebuild to retry."
+          : "Preview missing required markers. Rebuild to retry.",
+      }));
+      this.store.appendEvent(missionId, {
+        id: `evt_${nanoid(10)}`,
+        missionId,
+        type: "VERIFICATION_REJECTED",
+        label: injectFailure
+          ? "Verifier rejected preview — waitlist form element missing from HTML"
+          : "Verifier rejected preview — missing required markers",
+        createdAt: new Date().toISOString(),
+      });
+      return;
+    }
+
+    if (!live || !live.reachable) {
+      this.completeAgentPhase(
+        missionId,
+        agent.id,
+        "check_artifacts",
+        live?.fallbackReason
+          ? `Preview unreachable (${live.fallbackReason}); marked checks inconclusive.`
+          : "Preview URL not yet emitted; marked checks inconclusive.",
+      );
+    } else if (passed) {
+      this.completeAgentPhase(missionId, agent.id, "check_artifacts", "Preview checks passed (live HTTP)");
+    } else {
+      this.completeAgentPhase(
+        missionId,
+        agent.id,
+        "check_artifacts",
+        "Preview reachable but one or more required markers missing — see verification checks",
+      );
+    }
+    this.completeTask(missionId, task.id, agent.id, "preview-checks", passed ? "Preview verified" : "Preview verification recorded");
+  }
+
+  /**
+   * Free rebuild after a verifier rejection. Marks artifacts.launch.disputeRerun=true,
+   * resets the verify-preview/verify task completion + verification report, flips
+   * mission back to "active", and re-enters the launch loop. No new spend approval needed.
+   */
+  public async rebuildLaunchMission(missionId: string): Promise<MissionRecord> {
+    const record = this.mustGetMission(missionId);
+    if (record.input.template !== LAUNCH_SITE_TEMPLATE) {
+      throw new Error("Rebuild is only supported for launch missions");
+    }
+    if (record.status !== "failed") {
+      throw new Error(`Cannot rebuild mission ${missionId} from status ${record.status}`);
+    }
+
+    const launch = this.artifacts.get(missionId)?.launch ?? {};
+    this.artifacts.set(missionId, {
+      ...this.artifacts.get(missionId),
+      launch: { ...launch, disputeRerun: true },
+    });
+    await this.saveArtifacts(missionId);
+
+    this.store.mutate(missionId, (current) => ({
+      ...current,
+      status: "active",
+      failureReason: undefined,
+      verificationChecks: current.verificationChecks.filter(
+        (check) => !["preview_loads", "waitlist_form", "mission_meta", "hero_h1"].includes(check.id),
+      ),
+      tasks: current.tasks.map((t) =>
+        t.id === "task-verify-preview" || t.id === "task-verify"
+          ? { ...t, status: "pending" as const, completedAt: undefined }
+          : t,
+      ),
+    }));
+
+    this.store.appendEvent(missionId, {
+      id: `evt_${nanoid(10)}`,
+      missionId,
+      type: "VERIFICATION_RUNNING",
+      label: "Operator triggered free rebuild after verifier rejection",
+      createdAt: new Date().toISOString(),
+    });
+
+    void this.runMission(missionId).catch((err: unknown) => {
+      console.error(`[rebuild] launch mission rerun failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+
+    return this.mustGetMission(missionId);
   }
 
   private requestLaunchDomainCheckpoint(missionId: string): void {
@@ -1190,7 +1455,7 @@ export class MissionRunner {
     const verificationTx = await this.solana.submitVerification(record, proofHash);
     const settlementTx = await this.solana.approveSettlement(record);
     const settledRecord = this.mustGetMission(missionId);
-    const reputationDeltas = await this.buildReputationDeltas(settledRecord);
+    const reputationDeltas = await this.buildReputationDeltas(settledRecord, settlementTx.txSignature);
     const proof: MissionProof = {
       missionId,
       outputSummary: verification.summary,
@@ -2324,7 +2589,7 @@ export class MissionRunner {
     );
     const settlementTx = await this.solana.approveSettlement(record);
     const settledRecord = this.mustGetMission(missionId);
-    const reputationDeltas = await this.buildReputationDeltas(settledRecord);
+    const reputationDeltas = await this.buildReputationDeltas(settledRecord, settlementTx.txSignature);
     const proof = this.buildProof(settledRecord, verification);
 
     this.store.mutate(missionId, (current) => ({
@@ -2440,17 +2705,60 @@ export class MissionRunner {
     ].filter((item): item is string => Boolean(item));
   }
 
-  private async buildReputationDeltas(record: MissionRecord) {
+  private async buildReputationDeltas(record: MissionRecord, settleTxSignature?: string) {
+    // Multi-signal trust delta. Each signal contributes weighted +/- to the agent's
+    // global score; the result is clamped to [-3, +3]. Disputed missions (rebuild
+    // path) take a smaller positive delta even on success — the verifier had to retry.
+    // settleTxSignature is threaded down to solana.updateReputation so each per-agent
+    // delta gets a real on-chain hash (the settlement tx is the on-chain ix where
+    // finalize_allocation invokes update_reputation for every agent in the run).
+    const verifierApproved = record.verificationReport?.approved === true;
+    const someCheckpointAnswered = record.humanCheckpoints.some((c) => c.status === "answered");
+    const spendInBudget = record.budget.spent <= record.budget.totalBudget;
+    const startedAtMs = record.events.find((e) => e.type === "MISSION_CREATED")?.createdAt
+      ? new Date(record.events.find((e) => e.type === "MISSION_CREATED")!.createdAt).getTime()
+      : null;
+    const elapsedMs = startedAtMs ? Date.now() - startedAtMs : null;
+    const latencyOk = elapsedMs == null ? true : elapsedMs <= 10 * 60 * 1000;
+    const wasRebuilt = Boolean(this.artifacts.get(record.id)?.launch?.disputeRerun);
+
+    const verifierTerm = (verifierApproved ? +2 : -3) * 0.5;
+    const checkpointTerm = (someCheckpointAnswered ? +0.5 : 0) * 0.2;
+    const spendTerm = (spendInBudget ? +0.5 : -1) * 0.2;
+    const latencyTerm = (latencyOk ? +0.3 : -0.5) * 0.1;
+    let baseDelta = verifierTerm + checkpointTerm + spendTerm + latencyTerm;
+    if (wasRebuilt && verifierApproved) {
+      // Rebuild penalty: cap successful-but-disputed missions to a small +
+      baseDelta = Math.min(baseDelta, 0.3);
+    }
+    const clamped = Math.max(-3, Math.min(3, Number(baseDelta.toFixed(2))));
+
+    const rationaleParts = [
+      verifierApproved ? "verifier approved" : "verifier rejected",
+      someCheckpointAnswered ? "operator checkpoint answered" : "no operator checkpoint",
+      spendInBudget ? "spend within budget" : "spend exceeded budget",
+      latencyOk ? "completed within latency window" : "ran past latency window",
+      wasRebuilt ? "after free rebuild" : null,
+    ]
+      .filter((s): s is string => Boolean(s));
+
     const deltas = [];
     for (const agent of record.agents) {
-      const rep = await this.solana.updateReputation(agent.id, 1);
+      const rep = await this.solana.updateReputation(agent.id, clamped, settleTxSignature);
+      const before = agent.trustScore;
+      const after = Math.max(0, Math.min(99, before + clamped));
+      // Per-agent category routing: prefer first capability, fall back to role.
+      const primaryCategory = agent.capabilities?.[0] ?? agent.role;
       deltas.push({
         agentId: agent.id,
-        before: agent.trustScore,
-        after: Math.min(agent.trustScore + 1, 99),
-        delta: 1,
-        rationale: "Mission completed successfully with explicit human approvals",
-        category: record.input.template === LAUNCH_SITE_TEMPLATE ? "launch-site" : agent.role,
+        before,
+        after,
+        delta: clamped,
+        rationale: rationaleParts.join("; "),
+        category:
+          record.input.template === LAUNCH_SITE_TEMPLATE
+            ? `launch:${primaryCategory}`
+            : primaryCategory,
         txSignature: rep.txSignature,
       });
     }
@@ -2521,17 +2829,23 @@ export class MissionRunner {
         return profile;
       }
       const category = delta.category ?? "mission-fit";
+      const positive = delta.delta >= 0;
+      const currentCategoryScore = profile.categoryScores[category] ?? profile.globalTrustScore;
+      const nextCategoryScore = Math.max(0, Math.min(99, currentCategoryScore + delta.delta));
+      // Sub-metric nudges scale with the sign + magnitude of the delta.
+      const microStep = Math.max(-0.05, Math.min(0.05, delta.delta * 0.01));
       return {
         ...profile,
         globalTrustScore: delta.after,
         categoryScores: {
           ...profile.categoryScores,
-          [category]: Math.min(99, (profile.categoryScores[category] ?? profile.globalTrustScore) + delta.delta),
+          [category]: nextCategoryScore,
         },
-        completedMissions: profile.completedMissions + 1,
-        verifierPassRate: clampTrustSignal(profile.verifierPassRate + 0.01),
-        spendDiscipline: clampTrustSignal(profile.spendDiscipline + 0.01),
-        proofQualityScore: clampTrustSignal(profile.proofQualityScore + 0.01),
+        completedMissions: profile.completedMissions + (positive ? 1 : 0),
+        failedMissions: profile.failedMissions + (positive ? 0 : 1),
+        verifierPassRate: clampTrustSignal(profile.verifierPassRate + microStep),
+        spendDiscipline: clampTrustSignal(profile.spendDiscipline + microStep),
+        proofQualityScore: clampTrustSignal(profile.proofQualityScore + microStep),
         lastUpdated: new Date().toISOString(),
         latestProofHash: proofHash,
         latestReputationTx: delta.txSignature ?? txSignature,
