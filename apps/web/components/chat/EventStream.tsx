@@ -20,6 +20,7 @@ export interface EventStreamProps {
   mission: MissionRecord | null;
   bubbles: Bubble[];
   intake: IntakeState;
+  intakeTyping?: boolean;
   mode: 'intake' | 'live';
   walletPending: boolean;
   onChipClick: (label: string) => void;
@@ -35,6 +36,7 @@ export default function EventStream({
   mission,
   bubbles,
   intake,
+  intakeTyping = false,
   mode,
   walletPending,
   onChipClick,
@@ -115,6 +117,14 @@ export default function EventStream({
               />
             ),
           )}
+        {mode === 'intake' && intakeTyping && (
+          <BifrostBubble
+            key="intake-typing"
+            text=""
+            timestamp=""
+            typing
+          />
+        )}
         {bubbles.map((b) => renderBubble(b, {
           mission,
           walletPending,
