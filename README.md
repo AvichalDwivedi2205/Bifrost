@@ -1,5 +1,7 @@
 # Bifrost
 
+**Demo video:** [Loom](https://www.loom.com/share/3af086e21d2c445a90fc70a052041010) · **Pitch video:** [Loom](https://www.loom.com/share/d342aa658f444a98ad715cb230f13a4b)
+
 Bifrost is a Solana-native mission execution stack for governed multi-agent workflows. This repo is scaffolded as a monorepo with:
 
 - `apps/web`: Next.js frontend inspired by the provided Bifrost UI direction
