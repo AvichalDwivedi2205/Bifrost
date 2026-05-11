@@ -161,11 +161,22 @@ export class BifrostSolanaClient {
     };
   }
 
-  async updateReputation(agentId: string, delta: number): Promise<{ txSignature: string }> {
+  async updateReputation(
+    agentId: string,
+    delta: number,
+    settleTxSignature?: string,
+  ): Promise<{ txSignature: string }> {
     if (!this.realTxMode) {
       return { txSignature: `rep_${agentId}_${delta}_${nanoid(4)}` };
     }
-
+    // Architectural truth: the on-chain `update_reputation` helper is invoked
+    // from inside `finalize_allocation` during settlement — it is NOT a
+    // top-level instruction we can call independently. Surfacing the
+    // settlement tx signature here gives every per-agent reputation delta a
+    // real, on-chain-verifiable hash (all 6 agents share the same settle tx).
+    if (settleTxSignature) {
+      return { txSignature: settleTxSignature };
+    }
     return { txSignature: `rep_local_${agentId}_${delta}` };
   }
 
